@@ -40,10 +40,6 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
-  void _spinToSection(int index) {
-    wheelKey.currentState?.spinToSection(index);
-  }
-
   void _spinToWin() {
     wheelKey.currentState?.spinToWin();
   }

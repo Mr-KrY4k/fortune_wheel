@@ -181,6 +181,10 @@ class FortuneWheel extends PositionComponent
   double currentSpinDuration = 3.0;
   double startRotation = 0;
 
+  // Отладка: отслеживание резких изменений
+  double _lastRotation = 0;
+  double _lastSpeed = 0;
+
   /// Текущий этап вращения
   SpinPhase currentPhase = SpinPhase.acceleration;
 
@@ -291,6 +295,12 @@ class FortuneWheel extends PositionComponent
   void spin({int? targetSection, double? duration}) {
     if (isSpinning) return;
 
+    print('🎲 НАЧАЛО ВРАЩЕНИЯ:');
+    print('   Целевая секция: ${targetSection ?? "случайная"}');
+    print('   Длительность: ${duration ?? spinDuration}s');
+    print('   Начальная позиция: ${currentRotation.toStringAsFixed(3)} рад');
+    print('   Max скорость: ${maxRotationSpeed.toStringAsFixed(3)} рад/с');
+
     isSpinning = true;
     elapsedTime = 0;
     resultIndex = null;
@@ -311,6 +321,10 @@ class FortuneWheel extends PositionComponent
     actualDecelerationDuration =
         decelerationDuration; // Инициализируем по умолчанию
 
+    // Сбрасываем отладочные переменные
+    _lastRotation = currentRotation;
+    _lastSpeed = 0;
+
     if (targetSectionIndex != null) {
       // Рассчитываем целевой угол для остановки на конкретной секции
       _calculateTargetRotationForSection();
@@ -324,6 +338,9 @@ class FortuneWheel extends PositionComponent
   void notifyExternalFunctionComplete() {
     if (waitingForExternalFunction && finalSpinStartTime == null) {
       finalSpinStartTime = elapsedTime;
+      print('✅ ВНЕШНЯЯ ФУНКЦИЯ ЗАВЕРШЕНА:');
+      print('   Время: ${elapsedTime.toStringAsFixed(3)}s');
+      print('   Начало финального вращения на ${currentSpinDuration}s');
     }
   }
 
@@ -394,6 +411,19 @@ class FortuneWheel extends PositionComponent
     // distance = avgSpeed × time, откуда: time = distance / (0.5 × maxSpeed)
     decelerationStartSpeed = maxRotationSpeed; // Начинаем с текущей скорости!
     actualDecelerationDuration = bestDistance / (0.5 * maxRotationSpeed);
+
+    print('🎯 ПАРАМЕТРЫ ЗАМЕДЛЕНИЯ:');
+    print('   Текущая позиция: ${currentRotation.toStringAsFixed(3)} рад');
+    print('   Целевая позиция: ${targetRotation!.toStringAsFixed(3)} рад');
+    print(
+      '   Расстояние: ${bestDistance.toStringAsFixed(3)} рад (${(bestDistance / _twoPi).toStringAsFixed(2)} оборотов)',
+    );
+    print(
+      '   Начальная скорость: ${decelerationStartSpeed.toStringAsFixed(3)} рад/с',
+    );
+    print(
+      '   Время замедления: ${actualDecelerationDuration.toStringAsFixed(3)}s',
+    );
   }
 
   /// Рассчитывает целевой угол поворота для остановки на конкретной секции
@@ -439,22 +469,76 @@ class FortuneWheel extends PositionComponent
         // Режим без цели - просто крутимся по времени
         _updateWithoutTarget(dt);
       }
+
+      // Отладка: отслеживаем резкие изменения
+      _checkForJumps(dt);
     }
+  }
+
+  /// Отладочный метод для отслеживания резких изменений
+  void _checkForJumps(double dt) {
+    if (dt > 0) {
+      final rotationDelta = (currentRotation - _lastRotation).abs();
+      final speedDelta = (rotationSpeed - _lastSpeed).abs();
+
+      // Ожидаемое изменение позиции за dt
+      final expectedDelta = _lastSpeed * dt;
+      final positionJump = (rotationDelta - expectedDelta).abs();
+
+      // Очень чувствительное обнаружение
+      const speedJumpThreshold = 0.1; // рад/с (было 0.5)
+      const positionJumpThreshold = 0.05; // радианы (было 0.1)
+
+      if (speedDelta > speedJumpThreshold) {
+        print('⚠️ РЕЗКОЕ ИЗМЕНЕНИЕ СКОРОСТИ:');
+        print('  Фаза: $currentPhase');
+        print('  Время: ${elapsedTime.toStringAsFixed(3)}s');
+        print('  dt: ${dt.toStringAsFixed(4)}s');
+        print('  Была: ${_lastSpeed.toStringAsFixed(3)} рад/с');
+        print('  Стала: ${rotationSpeed.toStringAsFixed(3)} рад/с');
+        print('  Δ = ${speedDelta.toStringAsFixed(3)} рад/с');
+      }
+
+      if (positionJump > positionJumpThreshold) {
+        print('⚠️ РЕЗКИЙ СКАЧОК ПОЗИЦИИ:');
+        print('  Фаза: $currentPhase');
+        print('  Время: ${elapsedTime.toStringAsFixed(3)}s');
+        print('  dt: ${dt.toStringAsFixed(4)}s');
+        print('  Позиция: ${currentRotation.toStringAsFixed(3)} рад');
+        print('  Была: ${_lastRotation.toStringAsFixed(3)} рад');
+        print('  Изменение: ${rotationDelta.toStringAsFixed(3)} рад');
+        print('  Ожидалось: ${expectedDelta.toStringAsFixed(3)} рад');
+        print('  Скачок: ${positionJump.toStringAsFixed(3)} рад');
+      }
+    }
+
+    _lastRotation = currentRotation;
+    _lastSpeed = rotationSpeed;
   }
 
   /// Обновление с точным попаданием в целевую секцию
   void _updateWithTargetRotation(double dt) {
     // ЭТАП 1: РАЗГОН до заданной скорости
     if (currentPhase == SpinPhase.acceleration) {
-      final accelerationProgress = elapsedTime / accelerationDuration;
-      final easedProgress = _easeInQuad(accelerationProgress);
-      rotationSpeed = maxRotationSpeed * easedProgress;
+      final accelerationProgress = math.min(
+        elapsedTime / accelerationDuration,
+        1.0,
+      );
+      // Линейное изменение скорости = постоянное ускорение (плавно!)
+      rotationSpeed = math.min(
+        maxRotationSpeed * accelerationProgress,
+        maxRotationSpeed,
+      );
       currentRotation += rotationSpeed * dt;
 
       // Убрал частое логирование для производительности
 
       // Проверяем завершение разгона
       if (accelerationProgress >= 1.0) {
+        print('🔄 ПЕРЕХОД: Acceleration → ConstantSpeed');
+        print('   Время: ${elapsedTime.toStringAsFixed(3)}s');
+        print('   Скорость: ${rotationSpeed.toStringAsFixed(3)} рад/с');
+
         currentPhase = SpinPhase.constantSpeed;
 
         // Вызываем callback если есть
@@ -481,6 +565,15 @@ class FortuneWheel extends PositionComponent
 
         // Проверяем, истекло ли время финальной прокрутки
         if (finalSpinElapsed >= currentSpinDuration) {
+          print('🔄 ПЕРЕХОД: ConstantSpeed → начало замедления');
+          print('   Время: ${elapsedTime.toStringAsFixed(3)}s');
+          print(
+            '   Текущая скорость: ${rotationSpeed.toStringAsFixed(3)} рад/с',
+          );
+          print(
+            '   Текущая позиция: ${currentRotation.toStringAsFixed(3)} рад',
+          );
+
           // Автоматически начинаем замедление к целевой секции
           if (targetSectionIndex != null) {
             _startDecelerationToTarget();
@@ -503,24 +596,29 @@ class FortuneWheel extends PositionComponent
       );
 
       if (decelerationProgress >= 1.0) {
+        print('🏁 ОСТАНОВКА:');
+        print('   Время: ${elapsedTime.toStringAsFixed(3)}s');
+        print(
+          '   Финальная позиция: ${targetRotation!.toStringAsFixed(3)} рад',
+        );
+
         // Остановка - точно устанавливаем целевую позицию
         currentRotation = targetRotation!;
         isSpinning = false;
         rotationSpeed = 0;
         _calculateResult();
       } else {
-        // Используем ease-out квадратичное (как в CSS ease-out)
-        // Начинается быстро, замедляется к концу
-        final easedProgress = _easeOutQuad(decelerationProgress);
+        // Линейное снижение скорости = постоянное торможение (плавно!)
+        rotationSpeed = decelerationStartSpeed * (1.0 - decelerationProgress);
 
-        // Прямой расчет позиции (как в CSS transition)
-        // Интерполируем от стартовой позиции к целевой
+        // Позиция вычисляется интегрированием линейной скорости
+        // v(t) = v0(1-t) → s(t) = ∫v dt = v0*t - v0*t²/2
+        // Нормализованная форма: s = t(2-t), что эквивалентно easeOutQuad
+        // Производная: ds/dt = 2(1-t) ✓ согласуется со скоростью выше
+        final totalDistance = targetRotation! - rotationAtDecelerationStart;
         currentRotation =
             rotationAtDecelerationStart +
-            (targetRotation! - rotationAtDecelerationStart) * easedProgress;
-
-        // Вычисляем скорость для визуальной плавности
-        rotationSpeed = decelerationStartSpeed * (1.0 - decelerationProgress);
+            totalDistance * decelerationProgress * (2.0 - decelerationProgress);
       }
     }
   }
@@ -533,8 +631,11 @@ class FortuneWheel extends PositionComponent
         elapsedTime / accelerationDuration,
         1.0,
       );
-      final easedProgress = _easeInQuad(accelerationProgress);
-      rotationSpeed = maxRotationSpeed * easedProgress;
+      // Линейное изменение скорости = постоянное ускорение (плавно!)
+      rotationSpeed = math.min(
+        maxRotationSpeed * accelerationProgress,
+        maxRotationSpeed,
+      );
       currentRotation += rotationSpeed * dt;
 
       if (accelerationProgress >= 1.0) {
@@ -572,18 +673,6 @@ class FortuneWheel extends PositionComponent
         _calculateResult();
       }
     }
-  }
-
-  // Easing-функция для плавного ускорения
-  // Квадратичное изменение: начинается медленно, ускоряется к концу
-  double _easeInQuad(double t) {
-    return t * t;
-  }
-
-  // Easing-функция для плавного замедления (как CSS ease-out)
-  // Квадратичное изменение: начинается быстро, замедляется к концу
-  double _easeOutQuad(double t) {
-    return 1.0 - (1.0 - t) * (1.0 - t);
   }
 
   void _calculateResult() {
