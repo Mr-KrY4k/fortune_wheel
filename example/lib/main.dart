@@ -29,15 +29,41 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  String _result = 'Нажмите на колесо для вращения';
   final wheelKey = GlobalKey<FortuneWheelWidgetState>();
 
   void _onSpinResult(SectionType result) {
-    setState(() {
-      _result = result == SectionType.win
-          ? '🎉 Вы выиграли! 🎉'
-          : '😔 Не повезло, попробуйте еще раз';
-    });
+    // Показываем результат в диалоговом окне
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(
+            result == SectionType.win
+                ? '🎉 Поздравляем!'
+                : '😔 Попробуйте ещё раз',
+            textAlign: TextAlign.center,
+          ),
+          content: Text(
+            result == SectionType.win
+                ? 'Вы выиграли!'
+                : 'Не повезло, попробуйте еще раз',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 18),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _spin() {
+    // Просто крутим колесо без конкретной цели
+    wheelKey.currentState?.spin();
   }
 
   void _spinToWin() {
@@ -70,22 +96,7 @@ class _MyHomePageState extends State<MyHomePage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
-              const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  _result,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
+              const SizedBox(height: 30),
               Expanded(
                 child: Center(
                   child: FortuneWheelWidget(
@@ -95,8 +106,8 @@ class _MyHomePageState extends State<MyHomePage> {
                     pointerOffset: 20,
                     sectionsCount: 10,
                     accelerationDuration: 1.0,
-                    spinDuration: 3.0,
-                    decelerationDuration: 3.0,
+                    spinDuration: 2.0,
+                    decelerationDuration: 1.0,
                     speed: 0.2,
                     theme: FortuneWheelTheme(
                       backgroundColor: Colors.transparent,
@@ -137,8 +148,9 @@ class _MyHomePageState extends State<MyHomePage> {
                   ),
                 ),
               ),
+
               const SizedBox(height: 10),
-              // Основные кнопки
+              // Кнопки с целевым результатом
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -168,6 +180,20 @@ class _MyHomePageState extends State<MyHomePage> {
                     child: const Text('Проиграть'),
                   ),
                 ],
+              ),
+              const SizedBox(height: 10),
+              // Кнопка простого вращения
+              ElevatedButton(
+                onPressed: _spin,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 12,
+                  ),
+                ),
+                child: const Text('Крутить'),
               ),
               const SizedBox(height: 30),
             ],

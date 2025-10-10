@@ -38,6 +38,10 @@ class FortuneWheelWidget extends StatefulWidget {
   /// После завершения операции вызовите notifyExternalFunctionComplete()
   final Function()? onConstantSpeedReached;
 
+  /// Разрешить вращение по нажатию на колесо
+  /// По умолчанию false - колесо не крутится при нажатии
+  final bool enableTapToSpin;
+
   const FortuneWheelWidget({
     super.key,
     this.onResult,
@@ -53,6 +57,7 @@ class FortuneWheelWidget extends StatefulWidget {
     this.decelerationDuration = 2.0,
     this.speed = 0.7,
     this.onConstantSpeedReached,
+    this.enableTapToSpin = false,
   }) : assert(
          speed > 0.0 && speed <= 1.0,
          'Speed must be between 0.0 (exclusive) and 1.0',
@@ -79,7 +84,14 @@ class FortuneWheelWidgetState extends State<FortuneWheelWidget> {
       accelerationDuration: widget.accelerationDuration,
       decelerationDuration: widget.decelerationDuration,
       speed: widget.speed,
+      enableTapToSpin: widget.enableTapToSpin,
     )..onConstantSpeedReached = widget.onConstantSpeedReached;
+  }
+
+  /// Программно запускает вращение колеса (без конкретной цели)
+  /// [duration] - время вращения в секундах (опционально)
+  void spin() {
+    game.wheel.spin();
   }
 
   /// Программно запускает вращение на конкретную секцию
