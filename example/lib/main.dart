@@ -52,6 +52,15 @@ class _MyHomePageState extends State<MyHomePage> {
     wheelKey.currentState?.spinToLose();
   }
 
+  // Вызывается когда колесо достигло постоянной скорости
+  void _onConstantSpeedReached() {
+    // Симулируем асинхронную операцию (например, запрос к API)
+    Future.delayed(const Duration(seconds: 2), () {
+      // Уведомляем колесо что можно начинать финальный этап
+      wheelKey.currentState?.notifyExternalFunctionComplete();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -86,12 +95,13 @@ class _MyHomePageState extends State<MyHomePage> {
                   child: FortuneWheelWidget(
                     key: wheelKey,
                     onResult: _onSpinResult,
+                    onConstantSpeedReached: _onConstantSpeedReached,
                     pointerOffset: 20,
                     sectionsCount: 10,
-                    accelerationDuration: 1.75,
-                    decelerationDuration: 3.75,
-                    spinDuration: 2.75,
-                    speed: 0.4,
+                    accelerationDuration: 1.0,
+                    spinDuration: 3.0,
+                    decelerationDuration: 3.0,
+                    speed: 0.2,
                     theme: FortuneWheelTheme(
                       backgroundColor: Colors.transparent,
                       pointerTheme: PointerTheme(
@@ -163,25 +173,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   ),
                 ],
               ),
-              const SizedBox(height: 10), const SizedBox(height: 10),
-              // Кнопки для выбора конкретной секции (для отладки)
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                alignment: WrapAlignment.center,
-                children: List.generate(10, (index) {
-                  return ElevatedButton(
-                    onPressed: () => _spinToSection(index),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: index.isEven ? Colors.green : Colors.red,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size(50, 40),
-                    ),
-                    child: Text('$index'),
-                  );
-                }),
-              ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 30),
             ],
           ),
         ),

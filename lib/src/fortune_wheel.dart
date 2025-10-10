@@ -17,7 +17,7 @@ class FortuneWheelGame extends FlameGame with TapDetector {
   late FortuneWheel wheel;
   Function(SectionType)? onResult;
 
-  /// Время вращения с постоянной скоростью (второй этап) в секундах
+  /// Время вращения с постоянной скоростью после завершения внешней функции
   final double spinDuration;
 
   final PointerPosition pointerPosition;
@@ -29,12 +29,19 @@ class FortuneWheelGame extends FlameGame with TapDetector {
   /// Время разгона в секундах (первый этап)
   final double accelerationDuration;
 
-  /// Время замедления в секундах (третий этап)
+  /// Коэффициент/время замедления:
+  /// - В режиме с целевой секцией: коэффициент расстояния (больше = больше оборотов до остановки)
+  /// - В режиме без цели: время замедления в секундах
+  /// Рекомендуемый диапазон: 0.5 - 3.0
   final double decelerationDuration;
 
   /// Скорость вращения от 0.0 (не включая) до 1.0 (быстро)
   /// Допустимые значения: 0.0 < speed <= 1.0
   final double speed;
+
+  /// Callback который вызывается когда колесо достигает постоянной скорости
+  /// Пока этот callback работает, колесо крутится
+  Function()? onConstantSpeedReached;
 
   /// Минимальная скорость вращения в радианах/секунду (при speed = 0.0)
   static const double _minRotationSpeed = 5.0;
@@ -144,6 +151,11 @@ class FortuneWheelGame extends FlameGame with TapDetector {
       wheel.spin(targetSection: randomLoseIndex, duration: duration);
     }
   }
+
+  /// Сигнализирует что внешняя функция завершилась и можно начинать финальный этап
+  void notifyExternalFunctionComplete() {
+    wheel.notifyExternalFunctionComplete();
+  }
 }
 
 class FortuneWheel extends PositionComponent
@@ -164,7 +176,6 @@ class FortuneWheel extends PositionComponent
   bool isSpinning = false;
   int? resultIndex;
   double elapsedTime = 0;
-  double initialSpeed = 0;
   double? targetRotation;
   int? targetSectionIndex;
   double currentSpinDuration = 3.0;
@@ -178,6 +189,54 @@ class FortuneWheel extends PositionComponent
 
   /// Время начала этапа замедления
   double decelerationStartTime = 0;
+
+  /// Угол поворота в начале замедления (для интерполяции)
+  double rotationAtDecelerationStart = 0;
+
+  /// Скорость в начале замедления (рассчитывается динамически)
+  double decelerationStartSpeed = 0;
+
+  /// Фактическое время замедления (рассчитывается автоматически)
+  double actualDecelerationDuration = 0;
+
+  /// Ожидаем ли завершения внешней функции
+  bool waitingForExternalFunction = false;
+
+  /// Время когда внешняя функция завершилась и начался финальный этап
+  double? finalSpinStartTime;
+
+  /// Вызывался ли callback onConstantSpeedReached
+  bool constantSpeedCallbackCalled = false;
+
+  // ========== Кэшированные константы ==========
+
+  /// Константа 2π (для избежания повторных вычислений)
+  static const double _twoPi = 2 * math.pi;
+
+  /// Угол одной секции (кэшируется при загрузке)
+  late final double _sectionAngle;
+
+  /// Угол указателя (кэшируется при загрузке)
+  late final double _pointerAngle;
+
+  /// Нормализованный угол указателя [0, 2π)
+  late final double _normalizedPointerAngle;
+
+  /// Естественное расстояние замедления (для режима с целью)
+  late final double _naturalDistance;
+
+  // ================================================
+
+  /// Кэшированные Path для секций (для производительности)
+  List<Path>? cachedSectionPaths;
+
+  /// Последний scale для которого были созданы Path
+  double? lastScale;
+
+  /// Кэшированные Paint объекты
+  final List<Paint> _fillPaints = [];
+  Paint? _sectionBorderPaint;
+  Paint? _wheelBorderPaint;
 
   FortuneWheel({
     required this.sections,
@@ -200,6 +259,33 @@ class FortuneWheel extends PositionComponent
     size = Vector2.all(availableSize);
     position = game.size / 2;
     anchor = Anchor.center;
+
+    // Кэшируем константные значения для оптимизации
+    _sectionAngle = _twoPi / sections.length;
+    _pointerAngle = _getPointerAngleByPosition(pointerPosition);
+    _normalizedPointerAngle = _normalizeAngle(_pointerAngle);
+    _naturalDistance = maxRotationSpeed * decelerationDuration;
+  }
+
+  /// Возвращает угол указателя в зависимости от позиции
+  double _getPointerAngleByPosition(PointerPosition position) {
+    switch (position) {
+      case PointerPosition.top:
+        return -math.pi / 2;
+      case PointerPosition.bottom:
+        return math.pi / 2;
+      case PointerPosition.left:
+        return math.pi;
+      case PointerPosition.right:
+        return 0;
+    }
+  }
+
+  /// Нормализует угол к диапазону [0, 2π)
+  double _normalizeAngle(double angle) {
+    var normalized = angle % _twoPi;
+    if (normalized < 0) normalized += _twoPi;
+    return normalized;
   }
 
   void spin({int? targetSection, double? duration}) {
@@ -217,101 +303,126 @@ class FortuneWheel extends PositionComponent
 
     currentSpinDuration = duration ?? spinDuration;
 
+    // Сбрасываем флаги
+    waitingForExternalFunction =
+        targetSection != null; // Ждем только если есть цель
+    finalSpinStartTime = null;
+    constantSpeedCallbackCalled = false;
+    actualDecelerationDuration =
+        decelerationDuration; // Инициализируем по умолчанию
+
     if (targetSectionIndex != null) {
       // Рассчитываем целевой угол для остановки на конкретной секции
-      final sectionAngle = (2 * math.pi) / sections.length;
-
-      // Центр целевой секции (в системе координат колеса без поворота)
-      var targetSectionCenter =
-          targetSectionIndex! * sectionAngle - math.pi / 2 + sectionAngle / 2;
-      // Нормализуем к [0, 2π)
-      targetSectionCenter = targetSectionCenter % (2 * math.pi);
-      if (targetSectionCenter < 0) targetSectionCenter += 2 * math.pi;
-
-      // Угол указателя в абсолютной системе координат
-      double pointerAngle;
-      switch (pointerPosition) {
-        case PointerPosition.top:
-          pointerAngle = -math.pi / 2;
-          break;
-        case PointerPosition.bottom:
-          pointerAngle = math.pi / 2;
-          break;
-        case PointerPosition.left:
-          pointerAngle = math.pi;
-          break;
-        case PointerPosition.right:
-          pointerAngle = 0;
-          break;
-      }
-
-      // Нормализуем pointerAngle тоже
-      var normalizedPointerAngle = pointerAngle % (2 * math.pi);
-      if (normalizedPointerAngle < 0) normalizedPointerAngle += 2 * math.pi;
-
-      // Нужно повернуть так, чтобы: targetSectionCenter + targetRotation = normalizedPointerAngle (mod 2π)
-      // targetRotation = normalizedPointerAngle - targetSectionCenter (mod 2π)
-      var baseRotation = normalizedPointerAngle - targetSectionCenter;
-
-      // Добавляем небольшое случайное отклонение от центра секции (±30% от половины секции)
-      final randomOffset =
-          (math.Random().nextDouble() - 0.5) * sectionAngle * 0.6;
-      baseRotation += randomOffset;
-
-      // Нормализуем baseRotation к [0, 2π)
-      baseRotation = baseRotation % (2 * math.pi);
-      if (baseRotation < 0) baseRotation += 2 * math.pi;
-
-      // Добавляем минимум 3 ЦЕЛЫХ полных оборота (важно для точности!)
-      final extraRotations = (3 + math.Random().nextInt(3))
-          .toDouble(); // 3, 4, или 5 целых оборотов
-
-      // Находим ближайший угол больше текущего
-      while (baseRotation <= currentRotation) {
-        baseRotation += 2 * math.pi;
-      }
-
-      targetRotation = baseRotation + extraRotations * 2 * math.pi;
-      initialSpeed =
-          (targetRotation! - currentRotation) / currentSpinDuration * 2;
-      rotationSpeed = initialSpeed;
-
-      // Проверяем правильность расчета
-      var finalAngle = targetSectionCenter + targetRotation!;
-      var normalizedFinal = finalAngle % (2 * math.pi);
-      if (normalizedFinal < 0) normalizedFinal += 2 * math.pi;
-      var normalizedPointer = pointerAngle % (2 * math.pi);
-      if (normalizedPointer < 0) normalizedPointer += 2 * math.pi;
-
-      print('=== SPIN TO SECTION $targetSectionIndex ===');
-      print('currentSpinDuration: ${currentSpinDuration}s');
-      print('sectionAngle: ${sectionAngle * 180 / math.pi}°');
-      print(
-        'targetSectionCenter (norm): ${targetSectionCenter * 180 / math.pi}°',
-      );
-      print('pointerAngle (norm): ${normalizedPointerAngle * 180 / math.pi}°');
-      print('baseRotation: ${baseRotation * 180 / math.pi}°');
-      print('targetRotation: ${targetRotation! * 180 / math.pi}°');
-      print('startRotation: ${startRotation * 180 / math.pi}°');
-      print(
-        'После поворота центр секции: ${normalizedFinal * 180 / math.pi}° (нормализовано)',
-      );
-      print(
-        'Должен быть на: ${normalizedPointer * 180 / math.pi}° (нормализовано)',
-      );
-      print(
-        'Разница: ${((normalizedFinal - normalizedPointer).abs() * 180 / math.pi)}°',
-      );
+      _calculateTargetRotationForSection();
     } else {
-      // Случайное вращение
-      initialSpeed = 15 + math.Random().nextDouble() * 10;
-      rotationSpeed = initialSpeed;
-
-      // Рассчитываем целевой угол для случайного вращения
-      // чтобы анимация была похожа на целевое вращение
-      final randomRotation = initialSpeed * currentSpinDuration / 2;
-      targetRotation = currentRotation + randomRotation;
+      // Случайное вращение - просто крутимся с заданной скоростью
+      targetRotation = null;
     }
+  }
+
+  /// Вызывается когда внешняя функция завершилась
+  void notifyExternalFunctionComplete() {
+    if (waitingForExternalFunction && finalSpinStartTime == null) {
+      finalSpinStartTime = elapsedTime;
+    }
+  }
+
+  /// Начинает замедление к целевой секции от текущей позиции
+  void _startDecelerationToTarget() {
+    // Пересчитываем целевой угол от текущей позиции
+    var targetSectionCenter =
+        targetSectionIndex! * _sectionAngle - math.pi / 2 + _sectionAngle / 2;
+    targetSectionCenter = _normalizeAngle(targetSectionCenter);
+
+    var baseRotation = _normalizedPointerAngle - targetSectionCenter;
+
+    // Добавляем случайное отклонение
+    final randomOffset =
+        (math.Random().nextDouble() - 0.5) * _sectionAngle * 0.6;
+    baseRotation += randomOffset;
+
+    baseRotation = _normalizeAngle(baseRotation);
+
+    // Находим угол целевой секции в следующем обороте
+    while (baseRotation <= currentRotation) {
+      baseRotation += _twoPi;
+    }
+
+    // ШАГ 1: Используем кэшированное естественное расстояние замедления
+    // ШАГ 2: Сколько полных оборотов естественно получится
+    final naturalFullRotations = (_naturalDistance / _twoPi).floor();
+
+    // ШАГ 3: Находим все возможные остановки на целевой секции в диапазоне ±2 оборота от естественного
+    final minRotations = math.max(1, naturalFullRotations - 2);
+    final maxRotations = naturalFullRotations + 2;
+
+    // Расстояние до секции в первом обороте
+    final distanceToFirstOccurrence = baseRotation - currentRotation;
+
+    // Пробуем разные количества оборотов и выбираем ближайшее к естественному
+    double? bestDistance;
+    int bestRotations = minRotations;
+    double minSpeedDifference = double.infinity;
+
+    for (int rotations = minRotations; rotations <= maxRotations; rotations++) {
+      final testDistance = (rotations - 1) * _twoPi + distanceToFirstOccurrence;
+      final distanceDifference = (testDistance - _naturalDistance).abs();
+
+      // Выбираем расстояние ближайшее к естественному
+      if (distanceDifference < minSpeedDifference) {
+        minSpeedDifference = distanceDifference;
+        bestDistance = testDistance;
+        bestRotations = rotations;
+      }
+    }
+
+    // Если не нашли подходящий вариант (все превышают скорость), берем минимум
+    if (bestDistance == null) {
+      bestRotations = minRotations;
+      bestDistance = (bestRotations - 1) * _twoPi + distanceToFirstOccurrence;
+    }
+
+    targetRotation = currentRotation + bestDistance;
+
+    // Переходим к замедлению
+    currentPhase = SpinPhase.deceleration;
+    decelerationStartTime = elapsedTime;
+    rotationAtDecelerationStart = currentRotation;
+
+    // Рассчитываем время замедления
+    // Для easeOutQuad: средняя скорость = 50% от максимальной
+    // distance = avgSpeed × time, откуда: time = distance / (0.5 × maxSpeed)
+    decelerationStartSpeed = maxRotationSpeed; // Начинаем с текущей скорости!
+    actualDecelerationDuration = bestDistance / (0.5 * maxRotationSpeed);
+  }
+
+  /// Рассчитывает целевой угол поворота для остановки на конкретной секции
+  void _calculateTargetRotationForSection() {
+    // Центр целевой секции (в системе координат колеса без поворота)
+    var targetSectionCenter =
+        targetSectionIndex! * _sectionAngle - math.pi / 2 + _sectionAngle / 2;
+    targetSectionCenter = _normalizeAngle(targetSectionCenter);
+
+    // Целевой угол поворота для попадания в секцию
+    var baseRotation = _normalizedPointerAngle - targetSectionCenter;
+
+    // Добавляем небольшое случайное отклонение от центра секции (±30% от половины секции)
+    final randomOffset =
+        (math.Random().nextDouble() - 0.5) * _sectionAngle * 0.6;
+    baseRotation += randomOffset;
+
+    // Нормализуем baseRotation к [0, 2π)
+    baseRotation = _normalizeAngle(baseRotation);
+
+    // Добавляем минимум 3 полных оборота
+    final extraRotations = (3 + math.Random().nextInt(3)).toDouble();
+
+    // Находим ближайший угол больше текущего
+    while (baseRotation <= currentRotation) {
+      baseRotation += _twoPi;
+    }
+
+    targetRotation = baseRotation + extraRotations * _twoPi;
   }
 
   @override
@@ -321,149 +432,173 @@ class FortuneWheel extends PositionComponent
     if (isSpinning) {
       elapsedTime += dt;
 
-      // ЭТАП 1: РАЗГОН (Acceleration)
-      if (currentPhase == SpinPhase.acceleration) {
-        final accelerationProgress = math.min(
-          elapsedTime / accelerationDuration,
-          1.0,
-        );
+      if (targetRotation != null) {
+        // Режим с целевой секцией - используем точное управление углом
+        _updateWithTargetRotation(dt);
+      } else {
+        // Режим без цели - просто крутимся по времени
+        _updateWithoutTarget(dt);
+      }
+    }
+  }
 
-        // Плавное ускорение от 0 до maxRotationSpeed используя easeInQuad
-        final easedProgress = _easeInQuad(accelerationProgress);
-        rotationSpeed = maxRotationSpeed * easedProgress;
+  /// Обновление с точным попаданием в целевую секцию
+  void _updateWithTargetRotation(double dt) {
+    // ЭТАП 1: РАЗГОН до заданной скорости
+    if (currentPhase == SpinPhase.acceleration) {
+      final accelerationProgress = elapsedTime / accelerationDuration;
+      final easedProgress = _easeInQuad(accelerationProgress);
+      rotationSpeed = maxRotationSpeed * easedProgress;
+      currentRotation += rotationSpeed * dt;
 
-        // Обновляем угол поворота на основе текущей скорости
-        currentRotation += rotationSpeed * dt;
+      // Убрал частое логирование для производительности
 
-        print(
-          'ACCELERATION: time=$elapsedTime, progress=$accelerationProgress, speed=$rotationSpeed',
-        );
+      // Проверяем завершение разгона
+      if (accelerationProgress >= 1.0) {
+        currentPhase = SpinPhase.constantSpeed;
 
-        // Переход к этапу постоянной скорости
-        if (accelerationProgress >= 1.0) {
-          print('=== ACCELERATION COMPLETE ===');
-          print('Final speed: $rotationSpeed rad/s');
-          print('Current rotation: ${currentRotation * 180 / math.pi}°');
-
-          currentPhase = SpinPhase.constantSpeed;
-          constantSpeedStartTime = elapsedTime; // Запоминаем время начала этапа
+        // Вызываем callback если есть
+        if (game.onConstantSpeedReached != null &&
+            !constantSpeedCallbackCalled) {
+          constantSpeedCallbackCalled = true;
+          game.onConstantSpeedReached!();
         }
       }
-      // ЭТАП 2: ПОСТОЯННАЯ СКОРОСТЬ (Constant Speed)
-      else if (currentPhase == SpinPhase.constantSpeed) {
-        final constantSpeedElapsed = elapsedTime - constantSpeedStartTime;
+    }
+    // ЭТАП 2: ПОСТОЯННАЯ СКОРОСТЬ
+    else if (currentPhase == SpinPhase.constantSpeed) {
+      // Крутим с постоянной скоростью
+      rotationSpeed = maxRotationSpeed;
+      currentRotation += rotationSpeed * dt;
 
-        // Продолжаем вращаться с постоянной максимальной скоростью
-        rotationSpeed = maxRotationSpeed;
-        currentRotation += rotationSpeed * dt;
+      // Проверяем статус внешней функции
+      if (finalSpinStartTime == null) {
+        // Ждем завершения внешней функции - просто крутимся
+        // (убрано частое логирование для производительности)
+      } else {
+        // Внешняя функция завершилась - крутим еще spinDuration
+        final finalSpinElapsed = elapsedTime - finalSpinStartTime!;
 
-        // Выводим информацию каждые 60 кадров (примерно раз в секунду)
-        if ((elapsedTime * 60).toInt() % 60 == 0) {
-          print(
-            'CONSTANT SPEED: time=$constantSpeedElapsed/${currentSpinDuration}s, speed=$rotationSpeed, rotation=${currentRotation * 180 / math.pi}°',
-          );
-        }
-
-        // Проверяем, прошло ли spinDuration времени
-        if (constantSpeedElapsed >= currentSpinDuration) {
-          print('=== CONSTANT SPEED COMPLETE ===');
-          print('Duration: ${constantSpeedElapsed}s');
-          print('Current rotation: ${currentRotation * 180 / math.pi}°');
-
-          // Переходим к этапу замедления
-          currentPhase = SpinPhase.deceleration;
-          decelerationStartTime = elapsedTime;
+        // Проверяем, истекло ли время финальной прокрутки
+        if (finalSpinElapsed >= currentSpinDuration) {
+          // Автоматически начинаем замедление к целевой секции
+          if (targetSectionIndex != null) {
+            _startDecelerationToTarget();
+          } else {
+            // Нет целевой секции - просто останавливаемся
+            isSpinning = false;
+            rotationSpeed = 0;
+            _calculateResult();
+          }
+          return;
         }
       }
-      // ЭТАП 3: ЗАМЕДЛЕНИЕ (Deceleration)
-      else if (currentPhase == SpinPhase.deceleration) {
-        final decelerationElapsed = elapsedTime - decelerationStartTime;
-        final decelerationProgress = math.min(
-          decelerationElapsed / decelerationDuration,
-          1.0,
-        );
+    }
+    // ЭТАП 3: ЗАМЕДЛЕНИЕ
+    else if (currentPhase == SpinPhase.deceleration) {
+      final decelerationElapsed = elapsedTime - decelerationStartTime;
+      final decelerationProgress = math.min(
+        decelerationElapsed / actualDecelerationDuration,
+        1.0,
+      );
 
-        // Плавное замедление от maxRotationSpeed до 0 используя easeOutCubic
-        final easedProgress = _easeOutCubic(decelerationProgress);
-        rotationSpeed = maxRotationSpeed * (1.0 - easedProgress);
+      if (decelerationProgress >= 1.0) {
+        // Остановка - точно устанавливаем целевую позицию
+        currentRotation = targetRotation!;
+        isSpinning = false;
+        rotationSpeed = 0;
+        _calculateResult();
+      } else {
+        // Используем ease-out квадратичное (как в CSS ease-out)
+        // Начинается быстро, замедляется к концу
+        final easedProgress = _easeOutQuad(decelerationProgress);
 
-        // Обновляем угол поворота на основе текущей скорости
-        currentRotation += rotationSpeed * dt;
+        // Прямой расчет позиции (как в CSS transition)
+        // Интерполируем от стартовой позиции к целевой
+        currentRotation =
+            rotationAtDecelerationStart +
+            (targetRotation! - rotationAtDecelerationStart) * easedProgress;
 
-        print(
-          'DECELERATION: time=$decelerationElapsed/${decelerationDuration}s, progress=$decelerationProgress, speed=$rotationSpeed',
-        );
+        // Вычисляем скорость для визуальной плавности
+        rotationSpeed = decelerationStartSpeed * (1.0 - decelerationProgress);
+      }
+    }
+  }
 
-        // Проверяем, завершилось ли замедление
-        if (decelerationProgress >= 1.0) {
-          print('=== DECELERATION COMPLETE ===');
-          print('Final rotation: ${currentRotation * 180 / math.pi}°');
+  /// Обновление без целевой секции (просто крутится)
+  void _updateWithoutTarget(double dt) {
+    // ЭТАП 1: РАЗГОН
+    if (currentPhase == SpinPhase.acceleration) {
+      final accelerationProgress = math.min(
+        elapsedTime / accelerationDuration,
+        1.0,
+      );
+      final easedProgress = _easeInQuad(accelerationProgress);
+      rotationSpeed = maxRotationSpeed * easedProgress;
+      currentRotation += rotationSpeed * dt;
 
-          // Полностью останавливаемся
-          isSpinning = false;
-          rotationSpeed = 0;
+      if (accelerationProgress >= 1.0) {
+        currentPhase = SpinPhase.constantSpeed;
+        constantSpeedStartTime = elapsedTime;
+      }
+    }
+    // ЭТАП 2: ПОСТОЯННАЯ СКОРОСТЬ
+    else if (currentPhase == SpinPhase.constantSpeed) {
+      rotationSpeed = maxRotationSpeed;
+      currentRotation += rotationSpeed * dt;
 
-          _calculateResult();
-        }
+      final constantSpeedElapsed = elapsedTime - constantSpeedStartTime;
+      if (constantSpeedElapsed >= currentSpinDuration) {
+        currentPhase = SpinPhase.deceleration;
+        decelerationStartTime = elapsedTime;
+      }
+    }
+    // ЭТАП 3: ЗАМЕДЛЕНИЕ
+    else if (currentPhase == SpinPhase.deceleration) {
+      final decelerationElapsed = elapsedTime - decelerationStartTime;
+      final decelerationProgress = math.min(
+        decelerationElapsed / decelerationDuration,
+        1.0,
+      );
+
+      // Используем ease-out для плавного перехода (как в CSS)
+      // Линейно снижаем скорость для простоты в режиме без цели
+      rotationSpeed = maxRotationSpeed * (1.0 - decelerationProgress);
+      currentRotation += rotationSpeed * dt;
+
+      if (decelerationProgress >= 1.0) {
+        isSpinning = false;
+        rotationSpeed = 0;
+        _calculateResult();
       }
     }
   }
 
   // Easing-функция для плавного ускорения
-  // Квадратичное ускорение: начинается медленно, ускоряется к концу
+  // Квадратичное изменение: начинается медленно, ускоряется к концу
   double _easeInQuad(double t) {
     return t * t;
   }
 
-  // Easing-функция для плавного замедления
-  // Кубическое замедление: начинается быстро, замедляется к концу
-  double _easeOutCubic(double t) {
-    final f = t - 1.0;
-    return f * f * f + 1.0;
+  // Easing-функция для плавного замедления (как CSS ease-out)
+  // Квадратичное изменение: начинается быстро, замедляется к концу
+  double _easeOutQuad(double t) {
+    return 1.0 - (1.0 - t) * (1.0 - t);
   }
 
   void _calculateResult() {
-    final sectionAngle = (2 * math.pi) / sections.length;
-
-    // Угол указателя
-    double pointerAngle;
-    switch (pointerPosition) {
-      case PointerPosition.top:
-        pointerAngle = -math.pi / 2;
-        break;
-      case PointerPosition.bottom:
-        pointerAngle = math.pi / 2;
-        break;
-      case PointerPosition.left:
-        pointerAngle = math.pi;
-        break;
-      case PointerPosition.right:
-        pointerAngle = 0;
-        break;
-    }
-
     // Центр секции i после поворота: (i * sectionAngle - π/2 + sectionAngle/2) + currentRotation = pointerAngle
     // i * sectionAngle = pointerAngle - currentRotation + π/2 - sectionAngle/2
     // i = (pointerAngle - currentRotation + π/2 - sectionAngle/2) / sectionAngle
 
     var angleForCalc =
-        pointerAngle - currentRotation + math.pi / 2 - sectionAngle / 2;
+        _pointerAngle - currentRotation + math.pi / 2 - _sectionAngle / 2;
 
     // Нормализуем
-    angleForCalc = angleForCalc % (2 * math.pi);
-    if (angleForCalc < 0) angleForCalc += 2 * math.pi;
+    angleForCalc = _normalizeAngle(angleForCalc);
 
-    var sectionFloat = angleForCalc / sectionAngle;
+    var sectionFloat = angleForCalc / _sectionAngle;
     resultIndex = sectionFloat.round() % sections.length;
-
-    print('=== RESULT ===');
-    print('currentRotation: ${currentRotation * 180 / math.pi}°');
-    print('pointerAngle: ${pointerAngle * 180 / math.pi}°');
-    print('angleForCalc: ${angleForCalc * 180 / math.pi}°');
-    print('sectionFloat: $sectionFloat');
-    print('resultIndex: $resultIndex');
-    print('section type: ${sections[resultIndex!].type}');
-    print('===');
 
     if (resultIndex != null) {
       onSpinComplete(sections[resultIndex!].type);
@@ -478,64 +613,95 @@ class FortuneWheel extends PositionComponent
     final radius = size.x / 2;
     final scale = radius / 150;
 
+    // Кэшируем Path объекты для производительности
+    if (cachedSectionPaths == null || lastScale != scale) {
+      cachedSectionPaths = [];
+      lastScale = scale;
+
+      final scaledSectionRadius =
+          theme.sectionsTheme.sectionBorderRadius * scale;
+
+      for (int i = 0; i < sections.length; i++) {
+        final startAngle = i * _sectionAngle - math.pi / 2;
+
+        final Path path;
+        if (scaledSectionRadius > 0) {
+          path = _createRoundedSectionPath(
+            center,
+            radius,
+            startAngle,
+            _sectionAngle,
+            scaledSectionRadius,
+          );
+        } else {
+          path = Path()
+            ..moveTo(center.x, center.y)
+            ..arcTo(
+              Rect.fromCircle(
+                center: Offset(center.x, center.y),
+                radius: radius,
+              ),
+              startAngle,
+              _sectionAngle,
+              false,
+            )
+            ..close();
+        }
+
+        cachedSectionPaths!.add(path);
+      }
+
+      // Кэшируем Paint объекты для секций
+      _fillPaints.clear();
+      for (int i = 0; i < sections.length; i++) {
+        _fillPaints.add(
+          Paint()
+            ..color = sections[i].color
+            ..style = PaintingStyle.fill,
+        );
+      }
+
+      // Кэшируем Paint для бордеров
+      if (theme.sectionsTheme.sectionBorderWidth > 0) {
+        _sectionBorderPaint = Paint()
+          ..color = theme.sectionsTheme.sectionBorderColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = theme.sectionsTheme.sectionBorderWidth * scale;
+      }
+
+      if (theme.borderTheme.width > 0) {
+        _wheelBorderPaint = Paint()
+          ..color = theme.borderTheme.color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = theme.borderTheme.width * scale;
+      }
+    }
+
     canvas.save();
     canvas.translate(center.x, center.y);
     canvas.rotate(currentRotation);
     canvas.translate(-center.x, -center.y);
 
-    final sectionAngle = (2 * math.pi) / sections.length;
-
+    // Рисуем секции используя кэшированные объекты
     for (int i = 0; i < sections.length; i++) {
-      final startAngle = i * sectionAngle - math.pi / 2;
-
-      final paint = Paint()
-        ..color = sections[i].color
-        ..style = PaintingStyle.fill;
-
-      final scaledSectionRadius =
-          theme.sectionsTheme.sectionBorderRadius * scale;
-      final Path path;
-
-      // Создаем path с учетом скругления
-      if (scaledSectionRadius > 0) {
-        path = _createRoundedSectionPath(
-          center,
-          radius,
-          startAngle,
-          sectionAngle,
-          scaledSectionRadius,
-        );
-      } else {
-        path = Path()
-          ..moveTo(center.x, center.y)
-          ..arcTo(
-            Rect.fromCircle(center: Offset(center.x, center.y), radius: radius),
-            startAngle,
-            sectionAngle,
-            false,
-          )
-          ..close();
-      }
+      final path = cachedSectionPaths![i];
+      final paint = _fillPaints[i];
 
       canvas.drawPath(path, paint);
 
-      // Бордер секции (рисуем только если sectionBorderWidth > 0)
-      if (theme.sectionsTheme.sectionBorderWidth > 0) {
-        final sectionBorderPaint = Paint()
-          ..color = theme.sectionsTheme.sectionBorderColor
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = theme.sectionsTheme.sectionBorderWidth * scale;
-
-        canvas.drawPath(path, sectionBorderPaint);
+      // Бордер секции
+      if (_sectionBorderPaint != null) {
+        canvas.drawPath(path, _sectionBorderPaint!);
       }
 
+      final startAngle = i * _sectionAngle - math.pi / 2;
       _drawText(
         canvas,
         sections[i].label,
         i,
         center,
         radius,
-        startAngle + sectionAngle / 2,
+        startAngle + _sectionAngle / 2,
         scale,
         showSectionIndex,
       );
@@ -543,14 +709,9 @@ class FortuneWheel extends PositionComponent
 
     canvas.restore();
 
-    // Бордер колеса (рисуем только если width > 0)
-    if (theme.borderTheme.width > 0) {
-      final wheelBorderPaint = Paint()
-        ..color = theme.borderTheme.color
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = theme.borderTheme.width * scale;
-
-      canvas.drawCircle(Offset(center.x, center.y), radius, wheelBorderPaint);
+    // Бордер колеса
+    if (_wheelBorderPaint != null) {
+      canvas.drawCircle(Offset(center.x, center.y), radius, _wheelBorderPaint!);
     }
 
     _drawPointer(canvas, center, radius, scale);

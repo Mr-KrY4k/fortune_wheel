@@ -9,7 +9,7 @@ class FortuneWheelWidget extends StatefulWidget {
   final double? width;
   final double? height;
 
-  /// Время вращения с постоянной скоростью (второй этап) в секундах
+  /// Время вращения с постоянной скоростью после завершения внешней функции
   final double spinDuration;
 
   final PointerPosition pointerPosition;
@@ -23,12 +23,20 @@ class FortuneWheelWidget extends StatefulWidget {
   /// Время разгона в секундах (первый этап)
   final double accelerationDuration;
 
-  /// Время замедления в секундах (третий этап)
+  /// Коэффициент/время замедления:
+  /// - С целевой секцией: коэффициент расстояния (больше = больше оборотов)
+  /// - Без цели: время замедления в секундах
+  /// Рекомендуемые значения: 0.5-3.0
   final double decelerationDuration;
 
   /// Скорость вращения от 0.0 (не включая) до 1.0 (быстро)
   /// Допустимые значения: 0.0 < speed <= 1.0
   final double speed;
+
+  /// Callback который вызывается когда колесо достигает постоянной скорости
+  /// Используйте это для выполнения асинхронных операций
+  /// После завершения операции вызовите notifyExternalFunctionComplete()
+  final Function()? onConstantSpeedReached;
 
   const FortuneWheelWidget({
     super.key,
@@ -44,6 +52,7 @@ class FortuneWheelWidget extends StatefulWidget {
     this.accelerationDuration = 0.5,
     this.decelerationDuration = 2.0,
     this.speed = 0.7,
+    this.onConstantSpeedReached,
   }) : assert(
          speed > 0.0 && speed <= 1.0,
          'Speed must be between 0.0 (exclusive) and 1.0',
@@ -70,7 +79,7 @@ class FortuneWheelWidgetState extends State<FortuneWheelWidget> {
       accelerationDuration: widget.accelerationDuration,
       decelerationDuration: widget.decelerationDuration,
       speed: widget.speed,
-    );
+    )..onConstantSpeedReached = widget.onConstantSpeedReached;
   }
 
   /// Программно запускает вращение на конкретную секцию
@@ -89,6 +98,12 @@ class FortuneWheelWidgetState extends State<FortuneWheelWidget> {
   /// [duration] - время вращения в секундах (опционально)
   void spinToLose({double? duration}) {
     game.spinToLose(duration: duration);
+  }
+
+  /// Уведомляет колесо что внешняя функция завершилась
+  /// и можно начинать финальный этап вращения
+  void notifyExternalFunctionComplete() {
+    game.notifyExternalFunctionComplete();
   }
 
   @override
