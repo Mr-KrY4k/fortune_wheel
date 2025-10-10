@@ -265,22 +265,35 @@ class FortuneWheel extends PositionComponent
 
       final progress = math.min(elapsedTime / currentSpinDuration, 1.0);
 
-      // Используем одинаковое замедление для всех типов вращения
+      // Используем easing-функцию для плавного замедления
+      final easedProgress = _easeOutCubic(progress);
+
+      // Рассчитываем позицию напрямую из целевой (интерполяция)
+      if (targetRotation != null) {
+        currentRotation =
+            startRotation + (targetRotation! - startRotation) * easedProgress;
+      }
+
+      // Рассчитываем скорость для визуального отображения
       rotationSpeed = initialSpeed * (1 - progress);
-      currentRotation += rotationSpeed * dt;
 
       if (progress >= 1.0) {
         isSpinning = false;
         rotationSpeed = 0;
 
-        // Точно устанавливаем финальную позицию для целевого вращения
-        if (targetSectionIndex != null && targetRotation != null) {
-          currentRotation = targetRotation!;
-        }
+        // Финальная позиция уже точная благодаря интерполяции
+        currentRotation = targetRotation!;
 
         _calculateResult();
       }
     }
+  }
+
+  // Easing-функция для плавного замедления
+  // Кубическое замедление: начинается быстро, замедляется к концу
+  double _easeOutCubic(double t) {
+    final f = t - 1.0;
+    return f * f * f + 1.0;
   }
 
   void _calculateResult() {
@@ -752,226 +765,6 @@ class FortuneWheel extends PositionComponent
 
       canvas.drawCircle(centerPoint, scaledRadius, borderPaint);
     }
-  }
-
-  // DEPRECATED: Не используется - оставлена для совместимости
-  Path _DEPRECATED_OLD_createRoundedSectionPath(
-    Vector2 center,
-    double innerRadius,
-    double outerRadius,
-    double startAngle,
-    double sweepAngle,
-  ) {
-    final path = Path();
-    final endAngle = startAngle + sweepAngle;
-
-    // Начинаем от внутреннего радиуса
-    if (innerRadius > 0) {
-      // Точки на внутреннем радиусе
-      final innerStartX = center.x + innerRadius * math.cos(startAngle);
-      final innerStartY = center.y + innerRadius * math.sin(startAngle);
-
-      path.moveTo(innerStartX, innerStartY);
-
-      // Линия к внешнему радиусу
-      final outerStartX = center.x + outerRadius * math.cos(startAngle);
-      final outerStartY = center.y + outerRadius * math.sin(startAngle);
-      path.lineTo(outerStartX, outerStartY);
-
-      // Дуга по внешнему радиусу
-      path.arcTo(
-        Rect.fromCircle(
-          center: Offset(center.x, center.y),
-          radius: outerRadius,
-        ),
-        startAngle,
-        sweepAngle,
-        false,
-      );
-
-      // Линия обратно к внутреннему радиусу
-      final innerEndX = center.x + innerRadius * math.cos(endAngle);
-      final innerEndY = center.y + innerRadius * math.sin(endAngle);
-      path.lineTo(innerEndX, innerEndY);
-
-      // Дуга по внутреннему радиусу (обратно)
-      path.arcTo(
-        Rect.fromCircle(
-          center: Offset(center.x, center.y),
-          radius: innerRadius,
-        ),
-        endAngle,
-        -sweepAngle,
-        false,
-      );
-    } else {
-      // Обычная секция от центра (когда innerRadius = 0)
-      path.moveTo(center.x, center.y);
-      path.arcTo(
-        Rect.fromCircle(
-          center: Offset(center.x, center.y),
-          radius: outerRadius,
-        ),
-        startAngle,
-        sweepAngle,
-        false,
-      );
-    }
-
-    path.close();
-    return path;
-  }
-
-  // DEPRECATED: Старая версия - не используется
-  Path _DEPRECATED_createRoundedAnnulusSectionPath(
-    Vector2 center,
-    double innerRadius,
-    double outerRadius,
-    double startAngle,
-    double sweepAngle,
-    double cornerRadius,
-  ) {
-    // Если нет внутреннего радиуса, используем старую функцию
-    if (innerRadius <= 0) {
-      return _createRoundedSectionPath(
-        center,
-        outerRadius,
-        startAngle,
-        sweepAngle,
-        cornerRadius,
-      );
-    }
-
-    final path = Path();
-    final endAngle = startAngle + sweepAngle;
-
-    // Ограничиваем радиус скругления
-    final maxCornerRadius = math.min(
-      (outerRadius - innerRadius) * 0.4,
-      outerRadius * 0.2,
-    );
-    final cornerRadiusClamped = math.min(cornerRadius, maxCornerRadius);
-
-    // Точки на внутреннем радиусе с отступом для скругления
-    final innerStartX =
-        center.x + (innerRadius + cornerRadiusClamped) * math.cos(startAngle);
-    final innerStartY =
-        center.y + (innerRadius + cornerRadiusClamped) * math.sin(startAngle);
-    final innerEndX =
-        center.x + (innerRadius + cornerRadiusClamped) * math.cos(endAngle);
-    final innerEndY =
-        center.y + (innerRadius + cornerRadiusClamped) * math.sin(endAngle);
-
-    // Точки на внешнем радиусе с отступом для скругления
-    final outerStartInnerX =
-        center.x + (outerRadius - cornerRadiusClamped) * math.cos(startAngle);
-    final outerStartInnerY =
-        center.y + (outerRadius - cornerRadiusClamped) * math.sin(startAngle);
-    final outerEndInnerX =
-        center.x + (outerRadius - cornerRadiusClamped) * math.cos(endAngle);
-    final outerEndInnerY =
-        center.y + (outerRadius - cornerRadiusClamped) * math.sin(endAngle);
-
-    // Угловые точки (сами углы без отступа)
-    final outerStartX = center.x + outerRadius * math.cos(startAngle);
-    final outerStartY = center.y + outerRadius * math.sin(startAngle);
-    final outerEndX = center.x + outerRadius * math.cos(endAngle);
-    final outerEndY = center.y + outerRadius * math.sin(endAngle);
-
-    final innerCornerStartX = center.x + innerRadius * math.cos(startAngle);
-    final innerCornerStartY = center.y + innerRadius * math.sin(startAngle);
-    final innerCornerEndX = center.x + innerRadius * math.cos(endAngle);
-    final innerCornerEndY = center.y + innerRadius * math.sin(endAngle);
-
-    // Точки на дугах с угловым отступом
-    final arcInset = cornerRadiusClamped / outerRadius;
-    final innerArcInset = cornerRadiusClamped / innerRadius;
-
-    final outerArcStartAngle = startAngle + arcInset;
-    final outerArcEndAngle = endAngle - arcInset;
-    final outerArcSweep = outerArcEndAngle - outerArcStartAngle;
-
-    final innerArcStartAngle = startAngle + innerArcInset;
-    final innerArcEndAngle = endAngle - innerArcInset;
-    final innerArcSweep = innerArcEndAngle - innerArcStartAngle;
-
-    final outerArcStartX =
-        center.x + outerRadius * math.cos(outerArcStartAngle);
-    final outerArcStartY =
-        center.y + outerRadius * math.sin(outerArcStartAngle);
-
-    final innerArcEndX = center.x + innerRadius * math.cos(innerArcEndAngle);
-    final innerArcEndY = center.y + innerRadius * math.sin(innerArcEndAngle);
-
-    // Строим путь со всеми скругленными углами
-    path.moveTo(innerStartX, innerStartY);
-
-    // Линия вдоль первой радиальной линии
-    path.lineTo(outerStartInnerX, outerStartInnerY);
-
-    // Скругленный угол 1 (внешний начало)
-    path.quadraticBezierTo(
-      outerStartX,
-      outerStartY,
-      outerArcStartX,
-      outerArcStartY,
-    );
-
-    // Дуга по внешнему краю
-    if (outerArcSweep > 0) {
-      path.arcTo(
-        Rect.fromCircle(
-          center: Offset(center.x, center.y),
-          radius: outerRadius,
-        ),
-        outerArcStartAngle,
-        outerArcSweep,
-        false,
-      );
-    }
-
-    // Скругленный угол 2 (внешний конец)
-    path.quadraticBezierTo(
-      outerEndX,
-      outerEndY,
-      outerEndInnerX,
-      outerEndInnerY,
-    );
-
-    // Линия вдоль второй радиальной линии
-    path.lineTo(innerEndX, innerEndY);
-
-    // Скругленный угол 3 (внутренний конец)
-    path.quadraticBezierTo(
-      innerCornerEndX,
-      innerCornerEndY,
-      innerArcEndX,
-      innerArcEndY,
-    );
-
-    // Дуга по внутреннему краю (обратно)
-    if (innerArcSweep > 0) {
-      path.arcTo(
-        Rect.fromCircle(
-          center: Offset(center.x, center.y),
-          radius: innerRadius,
-        ),
-        innerArcEndAngle,
-        -innerArcSweep,
-        false,
-      );
-    }
-
-    // Скругленный угол 4 (внутренний начало)
-    path.quadraticBezierTo(
-      innerCornerStartX,
-      innerCornerStartY,
-      innerStartX,
-      innerStartY,
-    );
-
-    path.close();
-    return path;
   }
 
   // Создает секцию со всеми скругленными углами от центра
