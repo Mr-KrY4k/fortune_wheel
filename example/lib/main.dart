@@ -59,25 +59,71 @@ class _MyHomePageState extends State<MyHomePage> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: const Text('Колесо Фортуны'),
       ),
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
-              const Text(
-                'Колесо фортуны',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-              ),
               const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  _result,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
               Expanded(
                 child: Center(
                   child: FortuneWheelWidget(
                     key: wheelKey,
                     onResult: _onSpinResult,
-                    spinDuration: 14.0,
-                    pointerOffset: 15,
+                    pointerOffset: 20,
                     sectionsCount: 10,
-                    showSectionIndex: true,
+                    theme: FortuneWheelTheme(
+                      backgroundColor: Colors.transparent,
+                      pointerTheme: PointerTheme(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFFCC890B), Color(0xFFFFF38F)],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        ),
+                        shadows: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.25),
+                            blurRadius: 1.82,
+                            offset: Offset(0, 4.37),
+                          ),
+                        ],
+                      ),
+                      sectionsTheme: WheelSectionsTheme(
+                        colors: [
+                          Color(0xFF1FA863),
+                          Color(0xFF1FA863).withValues(alpha: 0.5),
+                        ],
+                        sectionBorderRadius: 10,
+                        sectionBorderWidth: 5,
+                        sectionBorderColor: Colors.white,
+                      ),
+                      borderTheme: WheelBorderTheme(
+                        color: Colors.transparent,
+                        width: 0,
+                      ),
+                      centerCircleTheme: CenterCircleTheme(
+                        color: Colors.white,
+                        borderColor: Color(0xFFF07820),
+                        borderWidth: 7,
+                        radius: 13,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -113,7 +159,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 10), const SizedBox(height: 10),
               // Кнопки для выбора конкретной секции (для отладки)
               Wrap(
                 spacing: 8,
@@ -132,21 +178,6 @@ class _MyHomePageState extends State<MyHomePage> {
                 }),
               ),
               const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  _result,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
             ],
           ),
         ),
