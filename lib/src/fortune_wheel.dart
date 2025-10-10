@@ -6,15 +6,41 @@ import 'package:flutter/material.dart';
 import 'fortune_wheel_theme.dart';
 import 'wheel_section.dart';
 
+/// Этапы вращения колеса
+enum SpinPhase {
+  acceleration, // Разгон
+  constantSpeed, // Постоянная скорость
+  deceleration, // Замедление
+}
+
 class FortuneWheelGame extends FlameGame with TapDetector {
   late FortuneWheel wheel;
   Function(SectionType)? onResult;
+
+  /// Время вращения с постоянной скоростью (второй этап) в секундах
   final double spinDuration;
+
   final PointerPosition pointerPosition;
   final double pointerOffset;
   final int sectionsCount;
   final bool showSectionIndex;
   final FortuneWheelTheme theme;
+
+  /// Время разгона в секундах (первый этап)
+  final double accelerationDuration;
+
+  /// Время замедления в секундах (третий этап)
+  final double decelerationDuration;
+
+  /// Скорость вращения от 0.0 (не включая) до 1.0 (быстро)
+  /// Допустимые значения: 0.0 < speed <= 1.0
+  final double speed;
+
+  /// Минимальная скорость вращения в радианах/секунду (при speed = 0.0)
+  static const double _minRotationSpeed = 5.0;
+
+  /// Максимальная скорость вращения в радианах/секунду (при speed = 1.0)
+  static const double _maxRotationSpeed = 25.0;
 
   FortuneWheelGame({
     this.onResult,
@@ -24,7 +50,13 @@ class FortuneWheelGame extends FlameGame with TapDetector {
     this.sectionsCount = 10,
     this.showSectionIndex = false,
     this.theme = const FortuneWheelTheme(),
-  });
+    this.accelerationDuration = 0.5,
+    this.decelerationDuration = 2.0,
+    this.speed = 0.7,
+  }) : assert(
+         speed > 0.0 && speed <= 1.0,
+         'Speed must be between 0.0 (exclusive) and 1.0',
+       );
 
   @override
   Color backgroundColor() => theme.backgroundColor;
@@ -33,6 +65,10 @@ class FortuneWheelGame extends FlameGame with TapDetector {
   Future<void> onLoad() async {
     await super.onLoad();
 
+    // Конвертируем нормализованную скорость (0.0-1.0) в радианы/секунду
+    final maxRotationSpeed =
+        _minRotationSpeed + (speed * (_maxRotationSpeed - _minRotationSpeed));
+
     wheel = FortuneWheel(
       sections: _createSections(),
       spinDuration: spinDuration,
@@ -40,6 +76,9 @@ class FortuneWheelGame extends FlameGame with TapDetector {
       pointerOffset: pointerOffset,
       showSectionIndex: showSectionIndex,
       theme: theme,
+      accelerationDuration: accelerationDuration,
+      decelerationDuration: decelerationDuration,
+      maxRotationSpeed: maxRotationSpeed,
       onSpinComplete: (result) {
         onResult?.call(result);
       },
@@ -116,6 +155,9 @@ class FortuneWheel extends PositionComponent
   final double pointerOffset;
   final bool showSectionIndex;
   final FortuneWheelTheme theme;
+  final double accelerationDuration;
+  final double decelerationDuration;
+  final double maxRotationSpeed;
 
   double currentRotation = 0;
   double rotationSpeed = 0;
@@ -128,6 +170,15 @@ class FortuneWheel extends PositionComponent
   double currentSpinDuration = 3.0;
   double startRotation = 0;
 
+  /// Текущий этап вращения
+  SpinPhase currentPhase = SpinPhase.acceleration;
+
+  /// Время начала этапа постоянной скорости
+  double constantSpeedStartTime = 0;
+
+  /// Время начала этапа замедления
+  double decelerationStartTime = 0;
+
   FortuneWheel({
     required this.sections,
     required this.onSpinComplete,
@@ -136,6 +187,9 @@ class FortuneWheel extends PositionComponent
     this.pointerOffset = 0.0,
     this.showSectionIndex = false,
     this.theme = const FortuneWheelTheme(),
+    required this.accelerationDuration,
+    required this.decelerationDuration,
+    required this.maxRotationSpeed,
   });
 
   @override
@@ -156,6 +210,10 @@ class FortuneWheel extends PositionComponent
     resultIndex = null;
     targetSectionIndex = targetSection;
     startRotation = currentRotation;
+
+    // Начинаем с этапа разгона
+    currentPhase = SpinPhase.acceleration;
+    rotationSpeed = 0; // Начинаем с нулевой скорости
 
     currentSpinDuration = duration ?? spinDuration;
 
@@ -263,30 +321,98 @@ class FortuneWheel extends PositionComponent
     if (isSpinning) {
       elapsedTime += dt;
 
-      final progress = math.min(elapsedTime / currentSpinDuration, 1.0);
+      // ЭТАП 1: РАЗГОН (Acceleration)
+      if (currentPhase == SpinPhase.acceleration) {
+        final accelerationProgress = math.min(
+          elapsedTime / accelerationDuration,
+          1.0,
+        );
 
-      // Используем easing-функцию для плавного замедления
-      final easedProgress = _easeOutCubic(progress);
+        // Плавное ускорение от 0 до maxRotationSpeed используя easeInQuad
+        final easedProgress = _easeInQuad(accelerationProgress);
+        rotationSpeed = maxRotationSpeed * easedProgress;
 
-      // Рассчитываем позицию напрямую из целевой (интерполяция)
-      if (targetRotation != null) {
-        currentRotation =
-            startRotation + (targetRotation! - startRotation) * easedProgress;
+        // Обновляем угол поворота на основе текущей скорости
+        currentRotation += rotationSpeed * dt;
+
+        print(
+          'ACCELERATION: time=$elapsedTime, progress=$accelerationProgress, speed=$rotationSpeed',
+        );
+
+        // Переход к этапу постоянной скорости
+        if (accelerationProgress >= 1.0) {
+          print('=== ACCELERATION COMPLETE ===');
+          print('Final speed: $rotationSpeed rad/s');
+          print('Current rotation: ${currentRotation * 180 / math.pi}°');
+
+          currentPhase = SpinPhase.constantSpeed;
+          constantSpeedStartTime = elapsedTime; // Запоминаем время начала этапа
+        }
       }
+      // ЭТАП 2: ПОСТОЯННАЯ СКОРОСТЬ (Constant Speed)
+      else if (currentPhase == SpinPhase.constantSpeed) {
+        final constantSpeedElapsed = elapsedTime - constantSpeedStartTime;
 
-      // Рассчитываем скорость для визуального отображения
-      rotationSpeed = initialSpeed * (1 - progress);
+        // Продолжаем вращаться с постоянной максимальной скоростью
+        rotationSpeed = maxRotationSpeed;
+        currentRotation += rotationSpeed * dt;
 
-      if (progress >= 1.0) {
-        isSpinning = false;
-        rotationSpeed = 0;
+        // Выводим информацию каждые 60 кадров (примерно раз в секунду)
+        if ((elapsedTime * 60).toInt() % 60 == 0) {
+          print(
+            'CONSTANT SPEED: time=$constantSpeedElapsed/${currentSpinDuration}s, speed=$rotationSpeed, rotation=${currentRotation * 180 / math.pi}°',
+          );
+        }
 
-        // Финальная позиция уже точная благодаря интерполяции
-        currentRotation = targetRotation!;
+        // Проверяем, прошло ли spinDuration времени
+        if (constantSpeedElapsed >= currentSpinDuration) {
+          print('=== CONSTANT SPEED COMPLETE ===');
+          print('Duration: ${constantSpeedElapsed}s');
+          print('Current rotation: ${currentRotation * 180 / math.pi}°');
 
-        _calculateResult();
+          // Переходим к этапу замедления
+          currentPhase = SpinPhase.deceleration;
+          decelerationStartTime = elapsedTime;
+        }
+      }
+      // ЭТАП 3: ЗАМЕДЛЕНИЕ (Deceleration)
+      else if (currentPhase == SpinPhase.deceleration) {
+        final decelerationElapsed = elapsedTime - decelerationStartTime;
+        final decelerationProgress = math.min(
+          decelerationElapsed / decelerationDuration,
+          1.0,
+        );
+
+        // Плавное замедление от maxRotationSpeed до 0 используя easeOutCubic
+        final easedProgress = _easeOutCubic(decelerationProgress);
+        rotationSpeed = maxRotationSpeed * (1.0 - easedProgress);
+
+        // Обновляем угол поворота на основе текущей скорости
+        currentRotation += rotationSpeed * dt;
+
+        print(
+          'DECELERATION: time=$decelerationElapsed/${decelerationDuration}s, progress=$decelerationProgress, speed=$rotationSpeed',
+        );
+
+        // Проверяем, завершилось ли замедление
+        if (decelerationProgress >= 1.0) {
+          print('=== DECELERATION COMPLETE ===');
+          print('Final rotation: ${currentRotation * 180 / math.pi}°');
+
+          // Полностью останавливаемся
+          isSpinning = false;
+          rotationSpeed = 0;
+
+          _calculateResult();
+        }
       }
     }
+  }
+
+  // Easing-функция для плавного ускорения
+  // Квадратичное ускорение: начинается медленно, ускоряется к концу
+  double _easeInQuad(double t) {
+    return t * t;
   }
 
   // Easing-функция для плавного замедления

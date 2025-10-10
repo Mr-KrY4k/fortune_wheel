@@ -8,7 +8,10 @@ class FortuneWheelWidget extends StatefulWidget {
   final Function(SectionType)? onResult;
   final double? width;
   final double? height;
+
+  /// Время вращения с постоянной скоростью (второй этап) в секундах
   final double spinDuration;
+
   final PointerPosition pointerPosition;
   final double pointerOffset;
   final int sectionsCount;
@@ -16,6 +19,16 @@ class FortuneWheelWidget extends StatefulWidget {
 
   /// Тема для колеса фортуны
   final FortuneWheelTheme theme;
+
+  /// Время разгона в секундах (первый этап)
+  final double accelerationDuration;
+
+  /// Время замедления в секундах (третий этап)
+  final double decelerationDuration;
+
+  /// Скорость вращения от 0.0 (не включая) до 1.0 (быстро)
+  /// Допустимые значения: 0.0 < speed <= 1.0
+  final double speed;
 
   const FortuneWheelWidget({
     super.key,
@@ -28,7 +41,13 @@ class FortuneWheelWidget extends StatefulWidget {
     this.sectionsCount = 10,
     this.showSectionIndex = false,
     this.theme = const FortuneWheelTheme(),
-  });
+    this.accelerationDuration = 0.5,
+    this.decelerationDuration = 2.0,
+    this.speed = 0.7,
+  }) : assert(
+         speed > 0.0 && speed <= 1.0,
+         'Speed must be between 0.0 (exclusive) and 1.0',
+       );
 
   @override
   State<FortuneWheelWidget> createState() => FortuneWheelWidgetState();
@@ -48,6 +67,9 @@ class FortuneWheelWidgetState extends State<FortuneWheelWidget> {
       sectionsCount: widget.sectionsCount,
       showSectionIndex: widget.showSectionIndex,
       theme: widget.theme,
+      accelerationDuration: widget.accelerationDuration,
+      decelerationDuration: widget.decelerationDuration,
+      speed: widget.speed,
     );
   }
 

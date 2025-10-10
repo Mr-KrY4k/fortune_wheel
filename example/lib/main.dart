@@ -88,6 +88,10 @@ class _MyHomePageState extends State<MyHomePage> {
                     onResult: _onSpinResult,
                     pointerOffset: 20,
                     sectionsCount: 10,
+                    accelerationDuration: 1.75,
+                    decelerationDuration: 1.75,
+                    spinDuration: 1.75,
+                    speed: 0.4,
                     theme: FortuneWheelTheme(
                       backgroundColor: Colors.transparent,
                       pointerTheme: PointerTheme(
