@@ -353,6 +353,104 @@ Future<void> _performApiCall() async {
 }
 ```
 
+## Использование изображений в секциях
+
+> **✅ Поддерживаемые форматы:** PNG, JPG, JPEG, WEBP, SVG
+
+### Простой способ: два изображения (выиграл/проиграл)
+
+Самый простой способ - указать одно изображение для всех выигрышных секций и одно для всех проигрышных:
+
+```dart
+FortuneWheelWidget(
+  key: wheelKey,
+  winImagePath: 'assets/images/win.png',      // Для всех секций "Выиграл"
+  loseImagePath: 'assets/images/lose.png',    // Для всех секций "Не выиграл"
+  showTextWithImage: false,                   // false = только картинка, true = картинка + текст
+  onResult: (result) => print('Результат: $result'),
+)
+```
+
+### Продвинутый способ: полная кастомизация
+
+Вы можете полностью настроить каждую секцию:
+
+```dart
+FortuneWheelWidget(
+  key: wheelKey,
+  customSections: [
+    // Секция с PNG изображением (тип определяется автоматически)
+    WheelSection(
+      type: SectionType.win,
+      color: Colors.green,
+      label: 'Приз 1',
+      imagePath: 'assets/images/prize1.png',
+    ),
+    // Секция с SVG изображением (тип определяется автоматически)
+    WheelSection(
+      type: SectionType.win,
+      color: Colors.blue,
+      label: 'Приз 2',
+      imagePath: 'assets/images/prize2.svg',
+    ),
+    // Секция только с текстом
+    WheelSection(
+      type: SectionType.lose,
+      color: Colors.red,
+      label: 'Попробуй еще',
+    ),
+    // Секция с изображением и текстом
+    WheelSection(
+      type: SectionType.win,
+      color: Colors.purple,
+      label: 'Супер приз!',
+      imagePath: 'assets/images/super_prize.png',
+      showLabelWithImage: true, // Показать текст вместе с изображением
+    ),
+  ],
+  onResult: (result) => print('Результат: $result'),
+)
+```
+
+### Параметры WheelSection
+
+- `type` - тип секции (SectionType.win или SectionType.lose)
+- `color` - цвет секции
+- `label` - текст секции
+- `imagePath` - путь к изображению в assets (опционально). Поддерживаемые форматы: .png, .jpg, .jpeg, .svg, .webp. Тип определяется автоматически по расширению
+- `showLabelWithImage` - показывать текст вместе с изображением (по умолчанию false)
+
+### Автоматическое определение типа изображения
+
+Тип изображения определяется автоматически по расширению файла:
+- `.png`, `.jpg`, `.jpeg`, `.webp` - растровые изображения
+- `.svg` - векторные изображения
+
+Вам не нужно указывать тип изображения вручную! Просто укажите путь к файлу, и система сама определит формат.
+
+### Оптимизация производительности
+
+Все изображения (включая SVG) загружаются один раз при инициализации колеса и кэшируются как растровые изображения (`ui.Image`). Это означает:
+
+- ✅ SVG предрендериваются в высоком качестве (200x200) при загрузке
+- ✅ Во время вращения рендерится только готовое растровое изображение
+- ✅ Никакого снижения производительности даже при 60 FPS
+- ✅ Плавное вращение с изображениями
+
+### Настройка assets
+
+Не забудьте добавить изображения в `pubspec.yaml`:
+
+```yaml
+flutter:
+  assets:
+    - assets/images/prize1.png
+    - assets/images/prize2.svg
+    - assets/images/super_prize.png
+    # Или просто всю папку
+    - assets/images/
+```
+
 ## Параметры
 
 ### FortuneWheelWidget
@@ -361,6 +459,10 @@ Future<void> _performApiCall() async {
 - `onConstantSpeedReached` - callback, вызывается когда колесо достигает постоянной скорости (опционально)
 - `onError` - callback для логирования ошибок и уведомления пользователя (опционально)
 - `allowSpinCompletionOnError` - разрешить завершение вращения при ошибке: `true` (по умолчанию) = остановиться, `false` = крутиться бесконечно
+- `winImagePath` - путь к изображению для всех секций "Выиграл" (опционально, поддерживает .png, .jpg, .jpeg, .svg, .webp)
+- `loseImagePath` - путь к изображению для всех секций "Не выиграл" (опционально, поддерживает .png, .jpg, .jpeg, .svg, .webp)
+- `showTextWithImage` - показывать текст вместе с изображением (по умолчанию false)
+- `customSections` - список кастомных секций для полной настройки (опционально, если указан - параметры sectionsCount, winText, loseText, winImagePath и loseImagePath игнорируются)
 - `width` - ширина виджета (опционально)
 - `height` - высота виджета (опционально)
 - `spinDuration` - длительность вращения в секундах после завершения внешней функции (по умолчанию 3.0)

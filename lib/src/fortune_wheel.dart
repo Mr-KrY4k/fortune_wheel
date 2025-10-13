@@ -1,8 +1,11 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
+import 'package:flame_svg/flame_svg.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'fortune_wheel_theme.dart';
 import 'wheel_section.dart';
 
@@ -24,6 +27,7 @@ class FortuneWheelGame extends FlameGame with TapDetector {
   final double pointerOffset;
   final int sectionsCount;
   final bool showSectionIndex;
+  final List<WheelSection>? customSections;
   final FortuneWheelTheme theme;
 
   /// Время разгона в секундах (первый этап)
@@ -61,6 +65,15 @@ class FortuneWheelGame extends FlameGame with TapDetector {
   /// Текст для секций с проигрышем
   final String loseText;
 
+  /// Путь к изображению для секций "Выиграл"
+  final String? winImagePath;
+
+  /// Путь к изображению для секций "Не выиграл"
+  final String? loseImagePath;
+
+  /// Показывать текст вместе с изображением
+  final bool showTextWithImage;
+
   /// Минимальная скорость вращения в радианах/секунду (при speed = 0.0)
   static const double _minRotationSpeed = 5.0;
 
@@ -74,6 +87,7 @@ class FortuneWheelGame extends FlameGame with TapDetector {
     this.pointerOffset = 0.0,
     this.sectionsCount = 10,
     this.showSectionIndex = false,
+    this.customSections,
     this.theme = const FortuneWheelTheme(),
     this.accelerationDuration = 0.5,
     this.decelerationDuration = 2.0,
@@ -82,6 +96,9 @@ class FortuneWheelGame extends FlameGame with TapDetector {
     this.allowSpinCompletionOnError = true,
     String? winText,
     String? loseText,
+    this.winImagePath,
+    this.loseImagePath,
+    this.showTextWithImage = false,
   }) : assert(
          speed > 0.0 && speed <= 1.0,
          'Speed must be between 0.0 (exclusive) and 1.0',
@@ -119,6 +136,12 @@ class FortuneWheelGame extends FlameGame with TapDetector {
   }
 
   List<WheelSection> _createSections() {
+    // Если указаны кастомные секции, используем их
+    if (customSections != null && customSections!.isNotEmpty) {
+      return customSections!;
+    }
+
+    // Иначе генерируем секции по умолчанию
     final colors = theme.sectionsTheme.colors;
     return List.generate(sectionsCount, (index) {
       final isWin = index.isEven;
@@ -127,6 +150,8 @@ class FortuneWheelGame extends FlameGame with TapDetector {
         type: isWin ? SectionType.win : SectionType.lose,
         color: colors[colorIndex],
         label: isWin ? winText : loseText,
+        imagePath: isWin ? winImagePath : loseImagePath,
+        showLabelWithImage: showTextWithImage,
       );
     });
   }
@@ -298,6 +323,11 @@ class FortuneWheel extends PositionComponent
   Paint? _sectionBorderPaint;
   Paint? _wheelBorderPaint;
 
+  /// Кэшированные изображения для секций (все конвертируются в ui.Image для производительности)
+  final Map<String, ui.Image> _cachedImages = {};
+  bool _imagesLoading = false;
+  bool _imagesLoaded = false;
+
   FortuneWheel({
     required this.sections,
     required this.onSpinComplete,
@@ -325,6 +355,9 @@ class FortuneWheel extends PositionComponent
     _pointerAngle = _getPointerAngleByPosition(pointerPosition);
     _normalizedPointerAngle = _normalizeAngle(_pointerAngle);
     _naturalDistance = maxRotationSpeed * decelerationDuration;
+
+    // Загружаем изображения для секций
+    await _loadImages();
   }
 
   /// Возвращает угол указателя в зависимости от позиции
@@ -339,6 +372,56 @@ class FortuneWheel extends PositionComponent
       case PointerPosition.right:
         return 0;
     }
+  }
+
+  /// Загружает изображения для секций (PNG/JPG/SVG)
+  /// SVG предрендериваются в ui.Image для производительности
+  Future<void> _loadImages() async {
+    if (_imagesLoading || _imagesLoaded) return;
+    _imagesLoading = true;
+
+    for (final section in sections) {
+      if (section.imagePath == null || section.imagePath!.isEmpty) continue;
+
+      try {
+        final path = section.imagePath!;
+
+        if (section.isSvg) {
+          // Загружаем SVG и конвертируем в ui.Image для кэширования
+          // Svg.load() автоматически добавляет префикс 'assets/', поэтому убираем его
+          final svgPath = path.startsWith('assets/') ? path.substring(7) : path;
+          final svg = await Svg.load(svgPath);
+
+          // Предрендерим SVG в растровое изображение
+          final recorder = ui.PictureRecorder();
+          final canvas = Canvas(recorder);
+          final renderSize = 200.0; // Размер для предрендера (высокое качество)
+
+          // Рендерим SVG
+          svg.render(canvas, Vector2.all(renderSize));
+
+          final picture = recorder.endRecording();
+          final image = await picture.toImage(
+            renderSize.toInt(),
+            renderSize.toInt(),
+          );
+          _cachedImages[path] = image;
+        } else if (section.isRasterImage) {
+          // Загружаем растровое изображение напрямую через rootBundle
+          final data = await rootBundle.load(path);
+          final bytes = data.buffer.asUint8List();
+          final codec = await ui.instantiateImageCodec(bytes);
+          final frame = await codec.getNextFrame();
+          _cachedImages[path] = frame.image;
+        }
+      } catch (e) {
+        // Игнорируем ошибки загрузки, будет отображаться текст
+        print('Не удалось загрузить изображение ${section.imagePath}: $e');
+      }
+    }
+
+    _imagesLoaded = true;
+    _imagesLoading = false;
   }
 
   /// Нормализует угол к диапазону [0, 2π)
@@ -725,16 +808,44 @@ class FortuneWheel extends PositionComponent
       }
 
       final startAngle = i * _sectionAngle - math.pi / 2;
-      _drawText(
-        canvas,
-        sections[i].label,
-        i,
-        center,
-        radius,
-        startAngle + _sectionAngle / 2,
-        scale,
-        showSectionIndex,
-      );
+      final section = sections[i];
+      final sectionAngle = startAngle + _sectionAngle / 2;
+
+      // Проверяем наличие изображения (PNG или SVG - оба кэшированы как ui.Image)
+      final hasImage =
+          section.imagePath != null &&
+          _cachedImages.containsKey(section.imagePath);
+
+      if (hasImage) {
+        // Рисуем изображение
+        _drawImage(canvas, section, i, center, radius, sectionAngle, scale);
+
+        // Рисуем текст вместе с изображением, если нужно
+        if (section.showLabelWithImage) {
+          _drawText(
+            canvas,
+            section.label,
+            i,
+            center,
+            radius * 0.5, // Размещаем текст ближе к центру
+            sectionAngle,
+            scale,
+            showSectionIndex,
+          );
+        }
+      } else {
+        // Рисуем только текст
+        _drawText(
+          canvas,
+          section.label,
+          i,
+          center,
+          radius,
+          sectionAngle,
+          scale,
+          showSectionIndex,
+        );
+      }
     }
 
     canvas.restore();
@@ -839,6 +950,55 @@ class FortuneWheel extends PositionComponent
       );
 
       textPainter.paint(canvas, textOffset);
+    }
+
+    canvas.restore();
+  }
+
+  void _drawImage(
+    Canvas canvas,
+    WheelSection section,
+    int index,
+    Vector2 center,
+    double radius,
+    double angle,
+    double scale,
+  ) {
+    if (section.imagePath == null) return;
+
+    canvas.save();
+    canvas.translate(center.x, center.y);
+    canvas.rotate(angle);
+
+    final imageSize = math.min(60.0, radius * 0.25) * scale;
+    final imageDistance = radius * 0.75;
+
+    // Все изображения (PNG и SVG) кэшированы как ui.Image для производительности
+    if (_cachedImages.containsKey(section.imagePath)) {
+      final image = _cachedImages[section.imagePath!]!;
+
+      canvas.save();
+      canvas.translate(imageDistance, 0);
+      canvas.rotate(-math.pi / 2); // Разворачиваем изображение на -90 градусов
+
+      final srcRect = Rect.fromLTWH(
+        0,
+        0,
+        image.width.toDouble(),
+        image.height.toDouble(),
+      );
+
+      final dstRect = Rect.fromLTWH(
+        -imageSize / 2,
+        -imageSize / 2,
+        imageSize,
+        imageSize,
+      );
+
+      final paint = Paint()..filterQuality = FilterQuality.high;
+      canvas.drawImageRect(image, srcRect, dstRect, paint);
+
+      canvas.restore();
     }
 
     canvas.restore();

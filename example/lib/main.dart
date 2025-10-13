@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:fortune_spinner/fortune_spinner.dart';
 
+import 'gen/assets.gen.dart';
+
 void main() {
   runApp(const MyApp());
 }
@@ -191,6 +193,8 @@ class _MyHomePageState extends State<MyHomePage> {
                         radius: 13,
                       ),
                     ),
+                    winImagePath: Assets.svg.win.path,
+                    loseImagePath: Assets.svg.lose.path,
                   ),
                 ),
               ),

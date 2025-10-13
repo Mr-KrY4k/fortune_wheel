@@ -17,6 +17,10 @@ class FortuneWheelWidget extends StatefulWidget {
   final int sectionsCount;
   final bool showSectionIndex;
 
+  /// Кастомные секции с возможностью добавить изображения
+  /// Если указаны, параметры sectionsCount, winText и loseText игнорируются
+  final List<WheelSection>? customSections;
+
   /// Тема для колеса фортуны
   final FortuneWheelTheme theme;
 
@@ -57,6 +61,18 @@ class FortuneWheelWidget extends StatefulWidget {
   /// Текст для секций с проигрышем
   final String? loseText;
 
+  /// Путь к изображению для секций "Выиграл"
+  /// Поддерживаемые форматы: .png, .jpg, .jpeg, .svg, .webp
+  final String? winImagePath;
+
+  /// Путь к изображению для секций "Не выиграл"
+  /// Поддерживаемые форматы: .png, .jpg, .jpeg, .svg, .webp
+  final String? loseImagePath;
+
+  /// Показывать текст вместе с изображением
+  /// По умолчанию false - показывается только изображение
+  final bool showTextWithImage;
+
   const FortuneWheelWidget({
     super.key,
     this.onResult,
@@ -67,6 +83,7 @@ class FortuneWheelWidget extends StatefulWidget {
     this.pointerOffset = 0.0,
     this.sectionsCount = 10,
     this.showSectionIndex = false,
+    this.customSections,
     this.theme = const FortuneWheelTheme(),
     this.accelerationDuration = 0.5,
     this.decelerationDuration = 2.0,
@@ -77,6 +94,9 @@ class FortuneWheelWidget extends StatefulWidget {
     this.enableTapToSpin = false,
     this.winText,
     this.loseText,
+    this.winImagePath,
+    this.loseImagePath,
+    this.showTextWithImage = false,
   }) : assert(
          speed > 0.0 && speed <= 1.0,
          'Speed must be between 0.0 (exclusive) and 1.0',
@@ -100,6 +120,7 @@ class FortuneWheelWidgetState extends State<FortuneWheelWidget> {
             pointerOffset: widget.pointerOffset,
             sectionsCount: widget.sectionsCount,
             showSectionIndex: widget.showSectionIndex,
+            customSections: widget.customSections,
             theme: widget.theme,
             accelerationDuration: widget.accelerationDuration,
             decelerationDuration: widget.decelerationDuration,
@@ -108,6 +129,9 @@ class FortuneWheelWidgetState extends State<FortuneWheelWidget> {
             allowSpinCompletionOnError: widget.allowSpinCompletionOnError,
             winText: widget.winText,
             loseText: widget.loseText,
+            winImagePath: widget.winImagePath,
+            loseImagePath: widget.loseImagePath,
+            showTextWithImage: widget.showTextWithImage,
           )
           ..onConstantSpeedReached = widget.onConstantSpeedReached
           ..onError = widget.onError;
