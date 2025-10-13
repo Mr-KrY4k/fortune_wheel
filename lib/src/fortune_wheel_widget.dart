@@ -42,6 +42,12 @@ class FortuneWheelWidget extends StatefulWidget {
   /// По умолчанию false - колесо не крутится при нажатии
   final bool enableTapToSpin;
 
+  /// Текст для секций с выигрышем
+  final String? winText;
+
+  /// Текст для секций с проигрышем
+  final String? loseText;
+
   const FortuneWheelWidget({
     super.key,
     this.onResult,
@@ -58,6 +64,8 @@ class FortuneWheelWidget extends StatefulWidget {
     this.speed = 0.7,
     this.onConstantSpeedReached,
     this.enableTapToSpin = false,
+    this.winText,
+    this.loseText,
   }) : assert(
          speed > 0.0 && speed <= 1.0,
          'Speed must be between 0.0 (exclusive) and 1.0',
@@ -85,6 +93,8 @@ class FortuneWheelWidgetState extends State<FortuneWheelWidget> {
       decelerationDuration: widget.decelerationDuration,
       speed: widget.speed,
       enableTapToSpin: widget.enableTapToSpin,
+      winText: widget.winText,
+      loseText: widget.loseText,
     )..onConstantSpeedReached = widget.onConstantSpeedReached;
   }
 

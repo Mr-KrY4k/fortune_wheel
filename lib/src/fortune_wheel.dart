@@ -46,6 +46,12 @@ class FortuneWheelGame extends FlameGame with TapDetector {
   /// Разрешить вращение по нажатию на колесо
   final bool enableTapToSpin;
 
+  /// Текст для секций с выигрышем
+  final String winText;
+
+  /// Текст для секций с проигрышем
+  final String loseText;
+
   /// Минимальная скорость вращения в радианах/секунду (при speed = 0.0)
   static const double _minRotationSpeed = 5.0;
 
@@ -64,10 +70,14 @@ class FortuneWheelGame extends FlameGame with TapDetector {
     this.decelerationDuration = 2.0,
     this.speed = 0.7,
     this.enableTapToSpin = false,
+    String? winText,
+    String? loseText,
   }) : assert(
          speed > 0.0 && speed <= 1.0,
          'Speed must be between 0.0 (exclusive) and 1.0',
-       );
+       ),
+       winText = winText ?? 'Win',
+       loseText = loseText ?? 'Lose';
 
   @override
   Color backgroundColor() => theme.backgroundColor;
@@ -106,7 +116,7 @@ class FortuneWheelGame extends FlameGame with TapDetector {
       return WheelSection(
         type: isWin ? SectionType.win : SectionType.lose,
         color: colors[colorIndex],
-        label: isWin ? 'Выиграл' : 'Не выиграл',
+        label: isWin ? winText : loseText,
       );
     });
   }
@@ -124,7 +134,7 @@ class FortuneWheelGame extends FlameGame with TapDetector {
     wheel.spin(targetSection: sectionIndex, duration: duration);
   }
 
-  /// Программно запускает вращение на случайную секцию "Выиграл"
+  /// Программно запускает вращение на случайную секцию "Win"
   /// [duration] - время вращения в секундах (опционально)
   void spinToWin({double? duration}) {
     // Находим все секции с типом win (четные индексы)
@@ -141,7 +151,7 @@ class FortuneWheelGame extends FlameGame with TapDetector {
     }
   }
 
-  /// Программно запускает вращение на случайную секцию "Не выиграл"
+  /// Программно запускает вращение на случайную секцию "Lose"
   /// [duration] - время вращения в секундах (опционально)
   void spinToLose({double? duration}) {
     // Находим все секции с типом lose (нечетные индексы)
