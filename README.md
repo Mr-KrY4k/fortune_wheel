@@ -158,9 +158,12 @@ class _MyHomePageState extends State<MyHomePage> {
 
 ### Доступные методы:
 
+- **`spin()`** - запускает случайное вращение колеса без конкретной цели
 - **`spinToWin({double? duration})`** - останавливается на случайной зеленой секции "Выиграл"
 - **`spinToLose({double? duration})`** - останавливается на случайной красной секции "Не выиграл"
 - **`spinToSection(int index, {double? duration})`** - останавливается на конкретной секции по индексу
+- **`notifyExternalFunctionComplete({int? targetSectionIndex, SectionType? targetSectionType})`** - уведомляет колесо об успешном завершении внешней функции. Опционально можно указать целевую секцию (индекс или тип)
+- **`notifyExternalFunctionError(Object error, StackTrace stackTrace)`** - уведомляет колесо об ошибке во время выполнения внешней функции
 
 Все методы принимают опциональный параметр `duration` для переопределения времени вращения:
 
@@ -177,14 +180,193 @@ wheelKey.currentState?.spinToWin();
 
 Колесо сделает 3-5 полных оборотов с небольшим случайным отклонением от центра секции для реалистичности.
 
+## Обработка асинхронных операций и ошибок
+
+Колесо фортуны поддерживает выполнение асинхронных операций (например, запросов к API) во время вращения. Когда колесо достигает постоянной скорости, вызывается callback `onConstantSpeedReached`, который можно использовать для выполнения внешних операций.
+
+### Базовое использование
+
+```dart
+class _MyHomePageState extends State<MyHomePage> {
+  final wheelKey = GlobalKey<FortuneWheelWidgetState>();
+
+  void _onConstantSpeedReached() {
+    // Выполняем асинхронную операцию
+    _performApiCall();
+  }
+
+  Future<void> _performApiCall() async {
+    try {
+      // Запрос к API
+      final result = await fetchDataFromApi();
+      
+      // API может вернуть конкретный результат (индекс секции или тип)
+      // Вариант 1: Остановиться на конкретной секции
+      wheelKey.currentState?.notifyExternalFunctionComplete(
+        targetSectionIndex: result.sectionIndex,
+      );
+      
+      // Вариант 2: Остановиться на случайной секции нужного типа (win/lose)
+      // wheelKey.currentState?.notifyExternalFunctionComplete(
+      //   targetSectionType: result.isWin ? SectionType.win : SectionType.lose,
+      // );
+      
+      // Вариант 3: Случайная остановка (без параметров)
+      // wheelKey.currentState?.notifyExternalFunctionComplete();
+    } catch (error, stackTrace) {
+      // При ошибке уведомляем колесо, передавая информацию об ошибке
+      wheelKey.currentState?.notifyExternalFunctionError(error, stackTrace);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FortuneWheelWidget(
+      key: wheelKey,
+      onConstantSpeedReached: _onConstantSpeedReached,
+      onResult: (result) => print('Результат: $result'),
+    );
+  }
+}
+```
+
+### Обработка ошибок с уведомлением пользователя
+
+Callback `onError` используется для логирования и уведомления пользователя об ошибках:
+
+```dart
+class _MyHomePageState extends State<MyHomePage> {
+  final wheelKey = GlobalKey<FortuneWheelWidgetState>();
+
+  void _onConstantSpeedReached() {
+    _performApiCall();
+  }
+
+  Future<void> _performApiCall() async {
+    try {
+      // Симулируем запрос к API
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Можете раскомментировать для тестирования ошибки
+      // throw Exception('API Error: Connection timeout');
+      
+      wheelKey.currentState?.notifyExternalFunctionComplete();
+    } catch (error, stackTrace) {
+      wheelKey.currentState?.notifyExternalFunctionError(error, stackTrace);
+    }
+  }
+
+  void _onError(Object error, StackTrace stackTrace) {
+    debugPrint('Ошибка при выполнении API запроса: $error');
+    
+    // Показываем пользователю сообщение об ошибке
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Произошла ошибка: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FortuneWheelWidget(
+      key: wheelKey,
+      onConstantSpeedReached: _onConstantSpeedReached,
+      onError: _onError,
+      // allowSpinCompletionOnError: true, // По умолчанию - остановиться при ошибке
+      onResult: (result) => print('Результат: $result'),
+    );
+  }
+}
+```
+
+### Настройка поведения при ошибке
+
+Параметр `allowSpinCompletionOnError` контролирует поведение колеса при ошибке:
+
+```dart
+// Вариант 1: Остановиться при ошибке (по умолчанию)
+FortuneWheelWidget(
+  key: wheelKey,
+  onConstantSpeedReached: _onConstantSpeedReached,
+  onError: _onError, // Для уведомления пользователя
+  allowSpinCompletionOnError: true, // Остановится
+  onResult: (result) => print('Результат: $result'),
+)
+
+// Вариант 2: Крутиться бесконечно до успеха
+FortuneWheelWidget(
+  key: wheelKey,
+  onConstantSpeedReached: _onConstantSpeedReached,
+  onError: _onError, // Для уведомления пользователя
+  allowSpinCompletionOnError: false, // Будет крутиться до успеха
+  onResult: (result) => print('Результат: $result'),
+)
+```
+
+При `allowSpinCompletionOnError: false` колесо будет крутиться бесконечно при ошибках, пока не получит успешный результат через `notifyExternalFunctionComplete()`.
+
+### Важно
+
+- **`allowSpinCompletionOnError`** (по умолчанию `true`):
+  - **`true`** = колесо остановится при ошибке
+  - **`false`** = колесо будет крутиться бесконечно до успешного завершения
+- **`onError`** - callback для логирования и уведомления пользователя об ошибках
+- Всегда оборачивайте асинхронные операции в `try-catch` блок
+- При успешном выполнении используйте `notifyExternalFunctionComplete()` с параметрами:
+  - **`targetSectionIndex`** - конкретный индекс секции (0-9 по умолчанию)
+  - **`targetSectionType`** - тип секции (`SectionType.win` или `SectionType.lose`)
+  - Без параметров - случайная остановка
+- При ошибке используйте `notifyExternalFunctionError(error, stackTrace)`
+
+### Динамическая установка результата
+
+API может вернуть результат, на котором должно остановиться колесо. Используйте параметры `notifyExternalFunctionComplete()`:
+
+```dart
+Future<void> _performApiCall() async {
+  try {
+    final apiResponse = await yourApiCall();
+    
+    // Если API возвращает конкретный индекс секции
+    if (apiResponse.hasSpecificSection) {
+      wheelKey.currentState?.notifyExternalFunctionComplete(
+        targetSectionIndex: apiResponse.sectionIndex,
+      );
+    }
+    // Если API возвращает только win/lose
+    else if (apiResponse.hasResult) {
+      wheelKey.currentState?.notifyExternalFunctionComplete(
+        targetSectionType: apiResponse.isWinner ? SectionType.win : SectionType.lose,
+      );
+    }
+    // Если API не возвращает результат - случайная остановка
+    else {
+      wheelKey.currentState?.notifyExternalFunctionComplete();
+    }
+  } catch (error, stackTrace) {
+    wheelKey.currentState?.notifyExternalFunctionError(error, stackTrace);
+  }
+}
+```
+
 ## Параметры
 
 ### FortuneWheelWidget
 
 - `onResult` - callback, вызывается когда колесо останавливается
+- `onConstantSpeedReached` - callback, вызывается когда колесо достигает постоянной скорости (опционально)
+- `onError` - callback для логирования ошибок и уведомления пользователя (опционально)
+- `allowSpinCompletionOnError` - разрешить завершение вращения при ошибке: `true` (по умолчанию) = остановиться, `false` = крутиться бесконечно
 - `width` - ширина виджета (опционально)
 - `height` - высота виджета (опционально)
-- `spinDuration` - длительность вращения в секундах (по умолчанию 3.0)
+- `spinDuration` - длительность вращения в секундах после завершения внешней функции (по умолчанию 3.0)
+- `accelerationDuration` - время разгона колеса в секундах (по умолчанию 0.5)
+- `decelerationDuration` - коэффициент/время замедления (по умолчанию 2.0)
+- `speed` - скорость вращения от 0.0 (не включая) до 1.0 (по умолчанию 0.7)
 - `backgroundColor` - цвет фона игры (по умолчанию черный)
 - `pointerPosition` - позиция стрелки: `PointerPosition.top`, `bottom`, `left`, `right` (по умолчанию top)
 - `pointerOffset` - насколько стрелка заходит внутрь колеса в пикселях (по умолчанию 0.0)
@@ -192,6 +374,7 @@ wheelKey.currentState?.spinToWin();
 - `pointerHeight` - высота стрелки в пикселях, адаптируется под размер колеса (по умолчанию 40.0)
 - `sectionsCount` - количество секций на колесе (по умолчанию 10, четные - выиграл, нечетные - проиграл)
 - `showSectionIndex` - показывать индексы секций для отладки (по умолчанию false)
+- `enableTapToSpin` - разрешить вращение при нажатии на колесо (по умолчанию false)
 - `winText` - текст для секций с выигрышем (по умолчанию 'Выиграл')
 - `loseText` - текст для секций с проигрышем (по умолчанию 'Не выиграл')
 - `theme` - тема для настройки внешнего вида колеса (см. раздел "Система тем")

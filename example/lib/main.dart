@@ -77,10 +77,54 @@ class _MyHomePageState extends State<MyHomePage> {
   // Вызывается когда колесо достигло постоянной скорости
   void _onConstantSpeedReached() {
     // Симулируем асинхронную операцию (например, запрос к API)
-    Future.delayed(const Duration(seconds: 2), () {
-      // Уведомляем колесо что можно начинать финальный этап
-      wheelKey.currentState?.notifyExternalFunctionComplete();
-    });
+    _performApiCall();
+  }
+
+  // Симуляция API вызова с обработкой ошибок
+  Future<void> _performApiCall() async {
+    try {
+      // Симулируем запрос к API
+      await Future.delayed(const Duration(seconds: 2));
+
+      // Раскомментируйте строку ниже, чтобы симулировать ошибку API
+      // throw Exception('API Error: Connection timeout');
+
+      // Симулируем ответ API с результатом
+      // Вариант 1: API возвращает конкретный индекс секции
+      // final apiResultIndex = 3; // Секция с индексом 3
+
+      // Вариант 2: API возвращает тип результата (выиграл/проиграл)
+      // final apiResultType = SectionType.win; // или SectionType.lose
+
+      // Уведомляем колесо с результатом от API
+      // Можно использовать либо индекс, либо тип, либо ничего (случайная остановка)
+      wheelKey.currentState?.notifyExternalFunctionComplete(
+        // targetSectionIndex: 3, // Остановиться на конкретной секции
+        // targetSectionType:
+        //     apiResultType, // Остановиться на случайной секции этого типа
+      );
+    } catch (error, stackTrace) {
+      // При ошибке уведомляем колесо, передавая информацию об ошибке
+      wheelKey.currentState?.notifyExternalFunctionError(error, stackTrace);
+    }
+  }
+
+  // Обработчик ошибок для внешних функций
+  void _onError(Object error, StackTrace stackTrace) {
+    // Выводим ошибку в консоль
+    debugPrint('Ошибка при выполнении API запроса: $error');
+    debugPrint('StackTrace: $stackTrace');
+
+    // Показываем пользователю сообщение об ошибке
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Произошла ошибка: $error'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   @override
@@ -103,6 +147,8 @@ class _MyHomePageState extends State<MyHomePage> {
                     key: wheelKey,
                     onResult: _onSpinResult,
                     onConstantSpeedReached: _onConstantSpeedReached,
+                    onError: _onError,
+                    allowSpinCompletionOnError: false,
                     pointerOffset: 20,
                     sectionsCount: 10,
                     accelerationDuration: 1.0,

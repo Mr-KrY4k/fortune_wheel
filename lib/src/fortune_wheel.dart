@@ -43,6 +43,15 @@ class FortuneWheelGame extends FlameGame with TapDetector {
   /// Пока этот callback работает, колесо крутится
   Function()? onConstantSpeedReached;
 
+  /// Callback который вызывается при ошибке во время выполнения внешней функции
+  /// Используется для логирования ошибок и уведомления пользователя
+  void Function(Object error, StackTrace stackTrace)? onError;
+
+  /// Разрешить завершение вращения колеса при ошибке
+  /// - true (по умолчанию): колесо остановится при ошибке
+  /// - false: колесо будет крутиться бесконечно до успешного завершения
+  final bool allowSpinCompletionOnError;
+
   /// Разрешить вращение по нажатию на колесо
   final bool enableTapToSpin;
 
@@ -70,6 +79,7 @@ class FortuneWheelGame extends FlameGame with TapDetector {
     this.decelerationDuration = 2.0,
     this.speed = 0.7,
     this.enableTapToSpin = false,
+    this.allowSpinCompletionOnError = true,
     String? winText,
     String? loseText,
   }) : assert(
@@ -169,8 +179,48 @@ class FortuneWheelGame extends FlameGame with TapDetector {
   }
 
   /// Сигнализирует что внешняя функция завершилась и можно начинать финальный этап
-  void notifyExternalFunctionComplete() {
+  ///
+  /// Параметры (опционально):
+  /// - [targetSectionIndex] - конкретный индекс секции для остановки
+  /// - [targetSectionType] - тип секции (win/lose) для остановки на случайной секции этого типа
+  ///
+  /// Если оба параметра указаны, приоритет имеет [targetSectionIndex]
+  void notifyExternalFunctionComplete({
+    int? targetSectionIndex,
+    SectionType? targetSectionType,
+  }) {
+    // Если API вернул конкретную секцию
+    if (targetSectionIndex != null) {
+      wheel.setTargetSection(targetSectionIndex);
+    }
+    // Если API вернул тип секции (win/lose)
+    else if (targetSectionType != null) {
+      final sections = <int>[];
+      for (int i = 0; i < wheel.sections.length; i++) {
+        if (wheel.sections[i].type == targetSectionType) {
+          sections.add(i);
+        }
+      }
+      if (sections.isNotEmpty) {
+        final randomIndex = sections[math.Random().nextInt(sections.length)];
+        wheel.setTargetSection(randomIndex);
+      }
+    }
+
     wheel.notifyExternalFunctionComplete();
+  }
+
+  /// Сигнализирует что во время выполнения внешней функции произошла ошибка
+  /// Вызывает onError callback и продолжает вращение колеса в зависимости от результата
+  void notifyExternalFunctionError(Object error, StackTrace stackTrace) {
+    // Вызываем callback если он установлен
+    onError?.call(error, stackTrace);
+
+    // Если allowSpinCompletionOnError = true, продолжаем вращение и останавливаемся
+    if (allowSpinCompletionOnError) {
+      wheel.notifyExternalFunctionComplete();
+    }
+    // Если false - не делаем ничего, колесо продолжит крутиться бесконечно
   }
 }
 
@@ -328,11 +378,17 @@ class FortuneWheel extends PositionComponent
     }
   }
 
+  /// Устанавливает целевую секцию динамически во время вращения
+  /// Используется когда API возвращает результат во время вращения
+  void setTargetSection(int sectionIndex) {
+    if (sectionIndex >= 0 && sectionIndex < sections.length) {
+      targetSectionIndex = sectionIndex;
+    }
+  }
+
   /// Вызывается когда внешняя функция завершилась
   void notifyExternalFunctionComplete() {
-    if (finalSpinStartTime == null) {
-      finalSpinStartTime = elapsedTime;
-    }
+    finalSpinStartTime ??= elapsedTime;
   }
 
   /// Начинает замедление к целевой секции от текущей позиции

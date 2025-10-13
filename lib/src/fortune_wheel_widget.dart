@@ -38,6 +38,15 @@ class FortuneWheelWidget extends StatefulWidget {
   /// После завершения операции вызовите notifyExternalFunctionComplete()
   final Function()? onConstantSpeedReached;
 
+  /// Callback который вызывается при ошибке во время выполнения внешней функции
+  /// Используется для логирования ошибок и уведомления пользователя
+  final void Function(Object error, StackTrace stackTrace)? onError;
+
+  /// Разрешить завершение вращения колеса при ошибке
+  /// - true (по умолчанию): колесо остановится при ошибке
+  /// - false: колесо будет крутиться бесконечно до успешного завершения или вызова notifyExternalFunctionComplete()
+  final bool allowSpinCompletionOnError;
+
   /// Разрешить вращение по нажатию на колесо
   /// По умолчанию false - колесо не крутится при нажатии
   final bool enableTapToSpin;
@@ -63,6 +72,8 @@ class FortuneWheelWidget extends StatefulWidget {
     this.decelerationDuration = 2.0,
     this.speed = 0.7,
     this.onConstantSpeedReached,
+    this.onError,
+    this.allowSpinCompletionOnError = true,
     this.enableTapToSpin = false,
     this.winText,
     this.loseText,
@@ -81,21 +92,25 @@ class FortuneWheelWidgetState extends State<FortuneWheelWidget> {
   @override
   void initState() {
     super.initState();
-    game = FortuneWheelGame(
-      onResult: widget.onResult,
-      spinDuration: widget.spinDuration,
-      pointerPosition: widget.pointerPosition,
-      pointerOffset: widget.pointerOffset,
-      sectionsCount: widget.sectionsCount,
-      showSectionIndex: widget.showSectionIndex,
-      theme: widget.theme,
-      accelerationDuration: widget.accelerationDuration,
-      decelerationDuration: widget.decelerationDuration,
-      speed: widget.speed,
-      enableTapToSpin: widget.enableTapToSpin,
-      winText: widget.winText,
-      loseText: widget.loseText,
-    )..onConstantSpeedReached = widget.onConstantSpeedReached;
+    game =
+        FortuneWheelGame(
+            onResult: widget.onResult,
+            spinDuration: widget.spinDuration,
+            pointerPosition: widget.pointerPosition,
+            pointerOffset: widget.pointerOffset,
+            sectionsCount: widget.sectionsCount,
+            showSectionIndex: widget.showSectionIndex,
+            theme: widget.theme,
+            accelerationDuration: widget.accelerationDuration,
+            decelerationDuration: widget.decelerationDuration,
+            speed: widget.speed,
+            enableTapToSpin: widget.enableTapToSpin,
+            allowSpinCompletionOnError: widget.allowSpinCompletionOnError,
+            winText: widget.winText,
+            loseText: widget.loseText,
+          )
+          ..onConstantSpeedReached = widget.onConstantSpeedReached
+          ..onError = widget.onError;
   }
 
   /// Программно запускает вращение колеса (без конкретной цели)
@@ -124,8 +139,26 @@ class FortuneWheelWidgetState extends State<FortuneWheelWidget> {
 
   /// Уведомляет колесо что внешняя функция завершилась
   /// и можно начинать финальный этап вращения
-  void notifyExternalFunctionComplete() {
-    game.notifyExternalFunctionComplete();
+  ///
+  /// Параметры (опционально):
+  /// - [targetSectionIndex] - конкретный индекс секции для остановки
+  /// - [targetSectionType] - тип секции (win/lose) для остановки на случайной секции этого типа
+  ///
+  /// Если оба параметра указаны, приоритет имеет [targetSectionIndex]
+  void notifyExternalFunctionComplete({
+    int? targetSectionIndex,
+    SectionType? targetSectionType,
+  }) {
+    game.notifyExternalFunctionComplete(
+      targetSectionIndex: targetSectionIndex,
+      targetSectionType: targetSectionType,
+    );
+  }
+
+  /// Уведомляет колесо что во время выполнения внешней функции произошла ошибка
+  /// Поведение колеса зависит от параметра allowSpinCompletionOnError
+  void notifyExternalFunctionError(Object error, StackTrace stackTrace) {
+    game.notifyExternalFunctionError(error, stackTrace);
   }
 
   @override
