@@ -5,16 +5,33 @@ import 'fortune_wheel_theme.dart';
 import 'wheel_section.dart';
 
 class FortuneWheelWidget extends StatefulWidget {
+  /// Callback который вызывается когда колесо останавливается
+  /// Возвращает тип секции (SectionType.win или SectionType.lose)
   final Function(SectionType)? onResult;
+
+  /// Ширина виджета (опционально, по умолчанию занимает всё доступное пространство)
   final double? width;
+
+  /// Высота виджета (опционально, по умолчанию занимает всё доступное пространство)
   final double? height;
 
   /// Время вращения с постоянной скоростью после завершения внешней функции
   final double spinDuration;
 
+  /// Позиция указателя на колесе
+  /// Возможные значения: PointerPosition.top, bottom, left, right
   final PointerPosition pointerPosition;
+
+  /// Насколько указатель заходит внутрь колеса в пикселях
+  /// По умолчанию 0.0 - указатель касается края колеса
   final double pointerOffset;
+
+  /// Количество секций на колесе (по умолчанию 10)
+  /// Четные индексы - выигрышные, нечетные - проигрышные
   final int sectionsCount;
+
+  /// Показывать индексы секций для отладки
+  /// По умолчанию false
   final bool showSectionIndex;
 
   /// Кастомные секции с возможностью добавить изображения
