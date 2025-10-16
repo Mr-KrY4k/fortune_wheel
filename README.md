@@ -19,7 +19,7 @@
 dependencies:
   fortune_spinner:
     git:
-      url: https://github.com/your-repo/fortune_spinner.git
+      url: https://github.com/Mr-KrY4k/fortune_wheel.git
 ```
 
 Или локально:
