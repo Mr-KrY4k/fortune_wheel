@@ -456,8 +456,9 @@ class FortuneWheel extends PositionComponent
       // Рассчитываем целевой угол для остановки на конкретной секции
       _calculateTargetRotationForSection();
     } else {
-      // Случайное вращение - просто крутимся с заданной скоростью
-      targetRotation = null;
+      // Случайное вращение - выбираем случайную секцию
+      targetSectionIndex = math.Random().nextInt(sections.length);
+      _calculateTargetRotationForSection();
     }
   }
 
