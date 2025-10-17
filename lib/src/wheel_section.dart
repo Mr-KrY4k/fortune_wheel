@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-enum SectionType { win, lose }
+enum SpinResult { win, lose }
 
 enum PointerPosition { top, bottom, left, right }
 
 class WheelSection {
-  final SectionType type;
+  final SpinResult type;
   final Color color;
   final String label;
 

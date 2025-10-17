@@ -6,8 +6,8 @@ import 'wheel_section.dart';
 
 class FortuneWheelWidget extends StatefulWidget {
   /// Callback который вызывается когда колесо останавливается
-  /// Возвращает тип секции (SectionType.win или SectionType.lose)
-  final Function(SectionType)? onResult;
+  /// Возвращает результат вращения (SpinResult.win или SpinResult.lose)
+  final Function(SpinResult)? onResult;
 
   /// Ширина виджета (опционально, по умолчанию занимает всё доступное пространство)
   final double? width;
@@ -183,16 +183,16 @@ class FortuneWheelWidgetState extends State<FortuneWheelWidget> {
   ///
   /// Параметры (опционально):
   /// - [targetSectionIndex] - конкретный индекс секции для остановки
-  /// - [targetSectionType] - тип секции (win/lose) для остановки на случайной секции этого типа
+  /// - [targetSpinResult] - результат вращения (win/lose) для остановки на случайной секции этого типа
   ///
   /// Если оба параметра указаны, приоритет имеет [targetSectionIndex]
   void notifyExternalFunctionComplete({
     int? targetSectionIndex,
-    SectionType? targetSectionType,
+    SpinResult? targetSpinResult,
   }) {
     game.notifyExternalFunctionComplete(
       targetSectionIndex: targetSectionIndex,
-      targetSectionType: targetSectionType,
+      targetSpinResult: targetSpinResult,
     );
   }
 

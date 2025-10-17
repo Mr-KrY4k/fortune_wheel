@@ -18,7 +18,7 @@ enum SpinPhase {
 
 class FortuneWheelGame extends FlameGame with TapDetector {
   late FortuneWheel wheel;
-  Function(SectionType)? onResult;
+  Function(SpinResult)? onResult;
 
   /// Время вращения с постоянной скоростью после завершения внешней функции
   final double spinDuration;
@@ -147,7 +147,7 @@ class FortuneWheelGame extends FlameGame with TapDetector {
       final isWin = index.isEven;
       final colorIndex = index % colors.length;
       return WheelSection(
-        type: isWin ? SectionType.win : SectionType.lose,
+        type: isWin ? SpinResult.win : SpinResult.lose,
         color: colors[colorIndex],
         label: isWin ? winText : loseText,
         imagePath: isWin ? winImagePath : loseImagePath,
@@ -175,7 +175,7 @@ class FortuneWheelGame extends FlameGame with TapDetector {
     // Находим все секции с типом win (четные индексы)
     final winSections = <int>[];
     for (int i = 0; i < wheel.sections.length; i++) {
-      if (wheel.sections[i].type == SectionType.win) {
+      if (wheel.sections[i].type == SpinResult.win) {
         winSections.add(i);
       }
     }
@@ -192,7 +192,7 @@ class FortuneWheelGame extends FlameGame with TapDetector {
     // Находим все секции с типом lose (нечетные индексы)
     final loseSections = <int>[];
     for (int i = 0; i < wheel.sections.length; i++) {
-      if (wheel.sections[i].type == SectionType.lose) {
+      if (wheel.sections[i].type == SpinResult.lose) {
         loseSections.add(i);
       }
     }
@@ -207,22 +207,22 @@ class FortuneWheelGame extends FlameGame with TapDetector {
   ///
   /// Параметры (опционально):
   /// - [targetSectionIndex] - конкретный индекс секции для остановки
-  /// - [targetSectionType] - тип секции (win/lose) для остановки на случайной секции этого типа
+  /// - [targetSpinResult] - результат вращения (win/lose) для остановки на случайной секции этого типа
   ///
   /// Если оба параметра указаны, приоритет имеет [targetSectionIndex]
   void notifyExternalFunctionComplete({
     int? targetSectionIndex,
-    SectionType? targetSectionType,
+    SpinResult? targetSpinResult,
   }) {
     // Если API вернул конкретную секцию
     if (targetSectionIndex != null) {
       wheel.setTargetSection(targetSectionIndex);
     }
-    // Если API вернул тип секции (win/lose)
-    else if (targetSectionType != null) {
+    // Если API вернул результат вращения (win/lose)
+    else if (targetSpinResult != null) {
       final sections = <int>[];
       for (int i = 0; i < wheel.sections.length; i++) {
-        if (wheel.sections[i].type == targetSectionType) {
+        if (wheel.sections[i].type == targetSpinResult) {
           sections.add(i);
         }
       }
@@ -252,7 +252,7 @@ class FortuneWheelGame extends FlameGame with TapDetector {
 class FortuneWheel extends PositionComponent
     with HasGameReference<FortuneWheelGame> {
   final List<WheelSection> sections;
-  final Function(SectionType) onSpinComplete;
+  final Function(SpinResult) onSpinComplete;
   final double spinDuration;
   final PointerPosition pointerPosition;
   final double pointerOffset;

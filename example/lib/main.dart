@@ -33,20 +33,20 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   final wheelKey = GlobalKey<FortuneWheelWidgetState>();
 
-  void _onSpinResult(SectionType result) {
+  void _onSpinResult(SpinResult result) {
     // Показываем результат в диалоговом окне
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           title: Text(
-            result == SectionType.win
+            result == SpinResult.win
                 ? '🎉 Поздравляем!'
                 : '😔 Попробуйте ещё раз',
             textAlign: TextAlign.center,
           ),
           content: Text(
-            result == SectionType.win
+            result == SpinResult.win
                 ? 'Вы выиграли!'
                 : 'Не повезло, попробуйте еще раз',
             textAlign: TextAlign.center,
@@ -95,15 +95,15 @@ class _MyHomePageState extends State<MyHomePage> {
       // Вариант 1: API возвращает конкретный индекс секции
       // final apiResultIndex = 3; // Секция с индексом 3
 
-      // Вариант 2: API возвращает тип результата (выиграл/проиграл)
-      // final apiResultType = SectionType.win; // или SectionType.lose
+      // Вариант 2: API возвращает результат вращения (выиграл/проиграл)
+      // final apiResult = SpinResult.win; // или SpinResult.lose
 
       // Уведомляем колесо с результатом от API
-      // Можно использовать либо индекс, либо тип, либо ничего (случайная остановка)
+      // Можно использовать либо индекс, либо результат, либо ничего (случайная остановка)
       wheelKey.currentState?.notifyExternalFunctionComplete(
         // targetSectionIndex: 3, // Остановиться на конкретной секции
-        // targetSectionType:
-        //     apiResultType, // Остановиться на случайной секции этого типа
+        // targetSpinResult:
+        //     apiResult, // Остановиться на случайной секции с этим результатом
       );
     } catch (error, stackTrace) {
       // При ошибке уведомляем колесо, передавая информацию об ошибке
